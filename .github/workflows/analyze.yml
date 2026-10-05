@@ -125,6 +125,7 @@ jobs:
             --target gen \
             --regenerate \
             --allow-table-gaps "Reflex Ghidra 12.1.3 recovery leaves six missing block targets in jump table at 0x006a8085 (fn_006a8060); accepted for initial bring-up" \
+            --allow-unmodelled "Initial Reflex bring-up: three malformed jump-table recoveries leave 19 literal dispatches without translated entry points; trap only those unresolved paths so the rest of the image can be generated and compiled" \
             2>&1 | tee build/logs/translate.log
 
       - name: Upload bring-up logs
