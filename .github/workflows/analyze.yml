@@ -34,6 +34,9 @@ jobs:
           ref: ${{ env.KIT_REV }}
           path: kit
 
+      - name: Patch Reflex SEH continuation
+        run: python3 tools/patch_reflex_seh.py
+
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
         with:
