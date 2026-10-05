@@ -12,6 +12,9 @@ env:
   GHIDRA_ARCHIVE: ghidra_12.1.3_PUBLIC_20260817.zip
   GHIDRA_SHA256: 93a5d11a9ad510622acaaf908c556a7b9b764d338e78a7567f3689bf5081fd54
   REFLEX_SHA256: 917d14e7ef7ce492b665fea7d0c87c9a39b549e2a43b09883d2a786988e7c02c
+  INPUT_REPO: NyerahMT/ReflexBuildInput
+  INPUT_TAG: game-input-v1
+  CORE_ASSET: Game-Core.zip
 
 jobs:
   analyze-and-translate:
@@ -23,13 +26,6 @@ jobs:
     steps:
       - name: Checkout ReflexRecomp
         uses: actions/checkout@v7.0.1
-
-      - name: Checkout private Reflex build input
-        uses: actions/checkout@v7.0.1
-        with:
-          repository: NyerahMT/ReflexBuildInput
-          token: ${{ secrets.REFLEX_INPUT_TOKEN }}
-          path: _input
 
       - name: Checkout pinned recomp-kit
         uses: actions/checkout@v7.0.1
@@ -56,17 +52,43 @@ jobs:
           python3 -m venv .venv
           .venv/bin/python -m pip install -r kit/requirements-dev.txt
 
-      - name: Verify private executable
+      - name: Download private Reflex core release asset
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
         run: |
-          test -f _input/game/MXReflex.exe || {
-            echo "Missing ReflexBuildInput/game/MXReflex.exe"
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "Missing Actions secret REFLEX_INPUT_TOKEN"
             exit 1
-          }
-          echo "$REFLEX_SHA256  _input/game/MXReflex.exe" | sha256sum -c -
+          fi
+          mkdir -p "$RUNNER_TEMP/reflex-assets" "$RUNNER_TEMP/reflex-game"
+          gh release download "$INPUT_TAG" \
+            --repo "$INPUT_REPO" \
+            --pattern "$CORE_ASSET" \
+            --dir "$RUNNER_TEMP/reflex-assets" \
+            --clobber
+          test -s "$RUNNER_TEMP/reflex-assets/$CORE_ASSET"
+          unzip -q "$RUNNER_TEMP/reflex-assets/$CORE_ASSET" -d "$RUNNER_TEMP/reflex-game"
+
+      - name: Locate and verify private executable
+        run: |
+          set -euo pipefail
+          exe="$(find "$RUNNER_TEMP/reflex-game" -type f -iname 'MXReflex.exe' -print -quit)"
+          if [[ -z "$exe" ]]; then
+            echo "MXReflex.exe was not found after extracting $CORE_ASSET"
+            find "$RUNNER_TEMP/reflex-game" -maxdepth 3 -type f | head -n 200
+            exit 1
+          fi
+          echo "$REFLEX_SHA256  $exe" | sha256sum -c -
+          game_root="$(dirname "$exe")"
+          echo "REFLEX_GAME_ROOT=$game_root" >> "$GITHUB_ENV"
+          echo "Reflex install root: $game_root"
+          echo "Top-level files:"
+          find "$game_root" -maxdepth 1 -type f -printf '%f\n' | sort | head -n 100
 
       - name: Link private game input
         run: |
-          .venv/bin/python tools/setup.py --install "$GITHUB_WORKSPACE/_input/game" --link-only
+          .venv/bin/python tools/setup.py --install "$REFLEX_GAME_ROOT" --link-only
 
       - name: Download and verify Ghidra 12.1.3
         run: |
