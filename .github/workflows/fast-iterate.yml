@@ -2,6 +2,14 @@ name: Fast Reflex Iteration
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "runtime/**"
+      - "tools/patch_reflex_runtime.py"
+      - "tools/patch_reflex_seh.py"
+      - ".github/workflows/fast-iterate.yml"
 
 permissions:
   contents: read
