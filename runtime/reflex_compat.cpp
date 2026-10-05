@@ -8,6 +8,7 @@
 #include "memory.h"
 
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -265,6 +266,181 @@ void crt_free(X86 *c) {
     set_eax(c, 0);
 }
 
+uint32_t g_iob_addr = 0;
+
+// VS2008's 32-bit FILE is eight dwords. The first startup users only need
+// stable stdin/stdout/stderr objects; stream I/O itself can be layered later.
+void crt_iob_func(X86 *c) {
+    constexpr uint32_t kFileSize = 32;
+    if (!g_iob_addr || !heap_owns(g_iob_addr)) {
+        g_iob_addr = heap_alloc(kFileSize * 3, true);
+        if (g_iob_addr) {
+            for (uint32_t i = 0; i < 3; ++i)
+                wr32(g_iob_addr + i * kFileSize + 16, i); // _file
+            wr32(g_iob_addr + 0 * kFileSize + 12, 0x0001u); // _IOREAD
+            wr32(g_iob_addr + 1 * kFileSize + 12, 0x0002u); // _IOWRT
+            wr32(g_iob_addr + 2 * kFileSize + 12, 0x0002u); // _IOWRT
+        }
+    }
+    set_eax(c, g_iob_addr);
+}
+
+std::string guest_printf_format(uint32_t fmt_ptr, uint32_t va) {
+    std::string fmt = gm_str(fmt_ptr, 4096);
+    std::string res;
+    size_t i = 0;
+    while (i < fmt.size()) {
+        char ch = fmt[i++];
+        if (ch != '%') {
+            res.push_back(ch);
+            continue;
+        }
+        if (i < fmt.size() && fmt[i] == '%') {
+            res.push_back('%');
+            ++i;
+            continue;
+        }
+
+        std::string spec = "%";
+        while (i < fmt.size() && strchr("-+ #0", fmt[i]))
+            spec.push_back(fmt[i++]);
+        while (i < fmt.size() && isdigit(static_cast<unsigned char>(fmt[i])))
+            spec.push_back(fmt[i++]);
+        if (i < fmt.size() && fmt[i] == '.') {
+            spec.push_back(fmt[i++]);
+            while (i < fmt.size() && isdigit(static_cast<unsigned char>(fmt[i])))
+                spec.push_back(fmt[i++]);
+        }
+        // Win32 long is 32-bit; consume the size prefix but format through the
+        // fixed-width host type below rather than Linux's 64-bit long.
+        while (i < fmt.size() && (fmt[i] == 'l' || fmt[i] == 'h'))
+            ++i;
+        if (i >= fmt.size())
+            break;
+
+        const char conv = fmt[i++];
+        if (!gm_valid(va, 4)) {
+            res += "<?>";
+            break;
+        }
+        const uint32_t v = rd32(va);
+        va += 4;
+
+        char buf[1024] = {};
+        switch (conv) {
+        case 's': {
+            std::string value = gm_str(v, 4096);
+            spec.push_back('s');
+            std::snprintf(buf, sizeof buf, spec.c_str(), value.c_str());
+            break;
+        }
+        case 'c':
+            spec.push_back('c');
+            std::snprintf(buf, sizeof buf, spec.c_str(), int(v & 0xffu));
+            break;
+        case 'd':
+        case 'i':
+            spec.push_back('d');
+            std::snprintf(buf, sizeof buf, spec.c_str(), static_cast<int32_t>(v));
+            break;
+        case 'u':
+            spec.push_back('u');
+            std::snprintf(buf, sizeof buf, spec.c_str(), v);
+            break;
+        case 'x':
+            spec.push_back('x');
+            std::snprintf(buf, sizeof buf, spec.c_str(), v);
+            break;
+        case 'X':
+            spec.push_back('X');
+            std::snprintf(buf, sizeof buf, spec.c_str(), v);
+            break;
+        case 'p':
+            std::snprintf(buf, sizeof buf, "0x%08x", v);
+            break;
+        default:
+            std::snprintf(buf, sizeof buf, "%%%c", conv);
+            va -= 4;
+            break;
+        }
+        res += buf;
+    }
+    return res;
+}
+
+void crt_snprintf(X86 *c) {
+    const uint32_t dst = arg(c, 0);
+    const uint32_t cap = arg(c, 1);
+    const uint32_t fmt = arg(c, 2);
+    const uint32_t va = c->r[R_ESP] + 16;
+    const std::string res = guest_printf_format(fmt, va);
+
+    if (!cap) {
+        set_eax(c, static_cast<uint32_t>(-1));
+        return;
+    }
+    if (!dst || !gm_valid(dst, cap)) {
+        set_eax(c, static_cast<uint32_t>(-1));
+        return;
+    }
+
+    if (res.size() >= cap) {
+        memcpy(g_mem + dst, res.data(), cap);
+        set_eax(c, static_cast<uint32_t>(-1));
+        return;
+    }
+    memcpy(g_mem + dst, res.data(), res.size());
+    g_mem[dst + res.size()] = 0;
+    set_eax(c, static_cast<uint32_t>(res.size()));
+}
+
+// MSVC 2008 x86 basic_string<char>: 16-byte small buffer/pointer union,
+// followed by 32-bit size and capacity. This is the one constructor Reflex
+// reaches during startup.
+void msvcp_string_ctor_cstr(X86 *c) {
+    const uint32_t self = c->r[R_ECX];
+    const std::string value = gm_str(arg(c, 0), 0x100000);
+    if (!self || !gm_valid(self, 24)) {
+        set_eax(c, 0);
+        return;
+    }
+
+    memset(g_mem + self, 0, 24);
+    const uint32_t n = static_cast<uint32_t>(value.size());
+    if (n <= 15) {
+        memcpy(g_mem + self, value.data(), n);
+        g_mem[self + n] = 0;
+        wr32(self + 16, n);
+        wr32(self + 20, 15);
+    } else {
+        const uint32_t data = heap_alloc(n + 1, false);
+        if (!data) {
+            set_eax(c, 0);
+            return;
+        }
+        memcpy(g_mem + data, value.data(), n);
+        g_mem[data + n] = 0;
+        wr32(self, data);
+        wr32(self + 16, n);
+        wr32(self + 20, n);
+    }
+    set_eax(c, self);
+}
+
+void msvcp_string_dtor(X86 *c) {
+    const uint32_t self = c->r[R_ECX];
+    if (self && gm_valid(self, 24)) {
+        const uint32_t capacity = rd32(self + 20);
+        if (capacity > 15) {
+            const uint32_t data = rd32(self);
+            if (data && heap_owns(data))
+                heap_free(data);
+        }
+        memset(g_mem + self, 0, 24);
+    }
+    set_eax(c, self);
+}
+
 void crt_exception_continue_search(X86 *c) {
     set_eax(c, 1); // ExceptionContinueSearch
 }
@@ -323,6 +499,8 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "_controlfp_s", ARGC_CDECL, crt_controlfp_s},
     {"MSVCR90.dll", "_onexit", ARGC_CDECL, crt_onexit},
     {"MSVCR90.dll", "__getmainargs", ARGC_CDECL, crt_getmainargs},
+    {"MSVCR90.dll", "__iob_func", ARGC_CDECL, crt_iob_func},
+    {"MSVCR90.dll", "_snprintf", ARGC_CDECL, crt_snprintf},
     {"MSVCR90.dll", "malloc", ARGC_CDECL, crt_malloc},
     {"MSVCR90.dll", "calloc", ARGC_CDECL, crt_calloc},
     {"MSVCR90.dll", "realloc", ARGC_CDECL, crt_realloc},
@@ -350,6 +528,15 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "fopen", ARGC_CDECL, nullptr},
     {"MSVCR90.dll", "__dllonexit", ARGC_CDECL, crt_onexit},
     {"MSVCR90.dll", "_except_handler4_common", ARGC_CDECL, crt_exception_continue_search},
+
+    // MSVC thiscall: ECX carries this; one explicit constructor argument is
+    // callee-cleaned, while the destructor has no stack arguments.
+    {"MSVCP90.dll",
+     "??0?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@PBD@Z",
+     1, msvcp_string_ctor_cstr},
+    {"MSVCP90.dll",
+     "??1?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@XZ",
+     0, msvcp_string_dtor},
 };
 
 } // namespace

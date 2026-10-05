@@ -45,6 +45,7 @@ jobs:
         run: |
           python3 tools/patch_reflex_seh.py
           python3 tools/patch_reflex_runtime.py
+          python3 tools/patch_reflex_sse.py
 
       - name: Compute private baseline key
         run: |

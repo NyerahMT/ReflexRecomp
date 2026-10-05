@@ -8,6 +8,8 @@ on:
     paths:
       - "runtime/**"
       - "tools/patch_reflex_runtime.py"
+      - "tools/patch_reflex_sse.py"
+      - "tools/refresh_cached_function.py"
       - "tools/patch_reflex_seh.py"
       - ".github/workflows/fast-iterate.yml"
 
@@ -55,6 +57,7 @@ jobs:
         run: |
           python3 tools/patch_reflex_seh.py
           python3 tools/patch_reflex_runtime.py
+          python3 tools/patch_reflex_sse.py
 
       - name: Compute private baseline key
         run: |
@@ -132,6 +135,31 @@ jobs:
 
       - name: Link private game input
         run: .venv/bin/python tools/setup.py --install "$REFLEX_GAME_ROOT" --link-only
+
+      - name: Refresh reached SSE function from private listing
+        run: |
+          set -euo pipefail
+          fresh="$RUNNER_TEMP/reflex-fn-refresh"
+          rm -rf "$fresh"
+          mkdir -p "$fresh"
+
+          .venv/bin/python kit/tools/recomp/translate.py \
+            --game "$GITHUB_WORKSPACE" \
+            --out "$fresh" \
+            --only 00903a60 \
+            --allow-table-gaps "Single-function fast refresh uses the established Reflex recovery policy" \
+            --allow-unmodelled "Single-function fast refresh keeps the established Reflex unresolved-path policy"
+
+          python3 tools/refresh_cached_function.py \
+            --cached build/recomp/gen \
+            --fresh "$fresh" \
+            --address 00903a60
+
+          if grep -Rqs 'recomp_unmodelled(c, 0x00903a7cu)' build/recomp/gen; then
+            echo "::error::Reflex SSE refresh still contains the 0x00903a7c trap"
+            exit 1
+          fi
+          echo "Refreshed private cached translation for fn_00903a60 with packed-single SSE support."
 
       - name: Build from cached translation
         id: host
