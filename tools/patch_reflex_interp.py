@@ -29,6 +29,32 @@ def main() -> None:
 
     text = replace_once(
         text,
+        "    case 0x90:\n        in.op = NOP;\n        break;\n",
+        """    case 0x90:
+        in.op = NOP;
+        break;
+    case 0xa1:
+    case 0xa3: {
+        Operand mem;
+        mem.kind = 2;
+        mem.disp = (int32_t)rd32(p);
+        p += 4;
+        in.op = MOV;
+        if (b == 0xa1) {
+            in.dst = reg_operand(R_EAX);
+            in.src = mem;
+        } else {
+            in.dst = mem;
+            in.src = reg_operand(R_EAX);
+        }
+        break;
+    }
+""",
+        "    case 0xa1:\n    case 0xa3:",
+    )
+
+    text = replace_once(
+        text,
         "    CMP,\n    TEST,\n",
         "    CMP,\n    CMP8,\n    TEST,\n",
         "    CMP8,\n",
@@ -180,7 +206,7 @@ uint32_t load8(const X86 *c, const Operand &o) {
     )
 
     INTERP.write_text(text)
-    print("Applied generic 8-bit CMP support to pinned fallback interpreter")
+    print("Applied Reflex-reached CMP8 and absolute MOV support to pinned fallback interpreter")
 
 
 if __name__ == "__main__":
