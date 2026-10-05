@@ -1,0 +1,64 @@
+# MX vs. ATV Reflex static-recomp target.
+# Original game files are supplied separately and never tracked here.
+
+[game]
+id = "reflex"
+name = "MX vs. ATV Reflex"
+app_name = "ReflexRecomp"
+bundle_id = "com.nyerahworks.reflexrecomp"
+executable = "MXReflex.exe"
+sha256 = "917d14e7ef7ce492b665fea7d0c87c9a39b549e2a43b09883d2a786988e7c02c"
+image_base = 0x00400000
+entry_point = 0x009006a7
+guest_root = 'C:\Program Files\THQ\MX vs ATV Reflex'
+developer_exe = "original/retail/MXReflex.exe"
+windows_version = "6.1"
+
+[translate]
+function_alignment = 16
+listings = "analysis/decompiled/MXReflex.exe"
+globals = "globals.toml"
+animation_counter = 0x00dcfe00
+volatile_reads = []
+entry_points = []
+
+[hooks]
+# Temporary sentinels in zero-filled writable alignment padding of the pinned EXE.
+frame_clock_begin = 0x00dcfe10
+frame_clock_wait = 0x00dcfe14
+frame_clock_wait_clamp = 0x00dcfe18
+frame_clock_clamp_deadline = 0x00dcfe20
+frame_clock_wait_deadline = 0x00dcfe24
+cursor_surface_ptrs = [0x00dcfe30, 0x00dcfe34]
+mouse_vtable = 0x00dcfe40
+mouse_device_ptr = 0x00dcfe44
+mouse_device_right = 0x00dcfe48
+camera = 0x00dcfe50
+sprites = []
+
+[mods]
+builtin = "none"
+
+[settings]
+rows = ["window", "performance_overlay", "controls"]
+
+[controls]
+default_layout = "pad"
+pad = "native"
+
+[controls.native]
+xinput = true
+dinput = true
+
+[launcher]
+title = "MX vs. ATV Reflex"
+store = "steam"
+steam_ids = ["55140"]
+install_names = ["MX vs ATV Reflex", "MX vs. ATV Reflex", "MXReflex"]
+min_free_mb = 6500
+
+[setup]
+required_dirs = []
+
+[bundle]
+exclude = []
