@@ -7,6 +7,7 @@
 #include "imports.h"
 #include "memory.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -358,6 +359,26 @@ std::string guest_printf_format(uint32_t fmt_ptr, uint32_t va) {
         case 'p':
             std::snprintf(buf, sizeof buf, "0x%08x", v);
             break;
+        case 'f':
+        case 'F':
+        case 'e':
+        case 'E':
+        case 'g':
+        case 'G':
+        case 'a':
+        case 'A': {
+            if (!gm_valid(va - 4, 8)) {
+                std::snprintf(buf, sizeof buf, "<?>");
+                break;
+            }
+            uint64_t bits = rd64(va - 4);
+            double value = 0.0;
+            memcpy(&value, &bits, sizeof value);
+            va += 4; // x86 varargs pass the promoted double in two dwords
+            spec.push_back(conv);
+            std::snprintf(buf, sizeof buf, spec.c_str(), value);
+            break;
+        }
         default:
             std::snprintf(buf, sizeof buf, "%%%c", conv);
             va -= 4;
@@ -394,6 +415,123 @@ void crt_snprintf(X86 *c) {
     set_eax(c, static_cast<uint32_t>(res.size()));
 }
 
+void crt_sprintf(X86 *c) {
+    const uint32_t dst = arg(c, 0);
+    const uint32_t fmt = arg(c, 1);
+    const uint32_t va = c->r[R_ESP] + 12;
+    const std::string res = guest_printf_format(fmt, va);
+    const uint64_t bytes = uint64_t(res.size()) + 1u;
+    if (!dst || bytes > 0xffffffffu || !gm_valid(dst, static_cast<uint32_t>(bytes))) {
+        set_eax(c, static_cast<uint32_t>(-1));
+        return;
+    }
+    memcpy(g_mem + dst, res.data(), res.size());
+    g_mem[dst + res.size()] = 0;
+    set_eax(c, static_cast<uint32_t>(res.size()));
+}
+
+void crt_memmove_s(X86 *c) {
+    constexpr uint32_t kEINVAL = 22;
+    constexpr uint32_t kERANGE = 34;
+    const uint32_t dst = arg(c, 0);
+    const uint32_t dst_size = arg(c, 1);
+    const uint32_t src = arg(c, 2);
+    const uint32_t count = arg(c, 3);
+
+    if (!count) {
+        set_eax(c, 0);
+        return;
+    }
+    if (!dst || !src) {
+        if (dst && dst_size && gm_valid(dst, dst_size))
+            memset(g_mem + dst, 0, dst_size);
+        set_eax(c, kEINVAL);
+        return;
+    }
+    if (count > dst_size || !gm_valid(dst, dst_size) || !gm_valid(src, count)) {
+        if (dst && dst_size && gm_valid(dst, dst_size))
+            memset(g_mem + dst, 0, dst_size);
+        set_eax(c, kERANGE);
+        return;
+    }
+    memmove(g_mem + dst, g_mem + src, count);
+    set_eax(c, 0);
+}
+
+void crt_mbstowcs_s(X86 *c) {
+    constexpr uint32_t kEINVAL = 22;
+    constexpr uint32_t kERANGE = 34;
+    constexpr uint32_t kSTRUNCATE = 80;
+    constexpr uint32_t kTRUNCATE = 0xffffffffu;
+
+    const uint32_t converted_out = arg(c, 0);
+    const uint32_t dst = arg(c, 1);
+    const uint32_t dst_words = arg(c, 2);
+    const uint32_t src = arg(c, 3);
+    const uint32_t count = arg(c, 4);
+
+    if (converted_out && !gm_valid(converted_out, 4)) {
+        set_eax(c, kEINVAL);
+        return;
+    }
+    if (!src) {
+        if (converted_out)
+            wr32(converted_out, 0);
+        if (dst && dst_words && gm_valid(dst, 2))
+            wr16(dst, 0);
+        set_eax(c, kEINVAL);
+        return;
+    }
+
+    const std::string input = gm_str(src, 0x100000);
+    const uint32_t requested =
+        count == kTRUNCATE ? static_cast<uint32_t>(input.size())
+                           : static_cast<uint32_t>(std::min<size_t>(input.size(), count));
+
+    // MS secure CRT permits a query with a null destination and zero capacity.
+    if (!dst && dst_words == 0) {
+        if (converted_out)
+            wr32(converted_out, requested + 1);
+        set_eax(c, 0);
+        return;
+    }
+    if (!dst || !dst_words || dst_words > 0x7fffffffu ||
+        !gm_valid(dst, dst_words * 2u)) {
+        if (converted_out)
+            wr32(converted_out, 0);
+        set_eax(c, kEINVAL);
+        return;
+    }
+
+    uint32_t to_write = requested;
+    uint32_t rc = 0;
+    if (to_write + 1 > dst_words) {
+        if (count == kTRUNCATE) {
+            to_write = dst_words - 1;
+            rc = kSTRUNCATE;
+        } else {
+            wr16(dst, 0);
+            if (converted_out)
+                wr32(converted_out, 0);
+            set_eax(c, kERANGE);
+            return;
+        }
+    }
+
+    for (uint32_t i = 0; i < to_write; ++i)
+        wr16(dst + i * 2u, static_cast<unsigned char>(input[i]));
+    wr16(dst + to_write * 2u, 0);
+    if (converted_out)
+        wr32(converted_out, to_write + 1);
+    set_eax(c, rc);
+}
+
+void crt_rtc_initw(X86 *c) {
+    // MSVCR90's _CRT_RTC_INITW is cdecl with five arguments. The retail CRT
+    // can return no user RTC callback; Wine models that valid case as NULL.
+    set_eax(c, 0);
+}
+
 // MSVC 2008 x86 basic_string<char>: 16-byte small buffer/pointer union,
 // followed by 32-bit size and capacity. This is the one constructor Reflex
 // reaches during startup.
@@ -408,6 +546,47 @@ void msvcp_string_ctor_default(X86 *c) {
     wr32(self + 16, 0);   // size
     wr32(self + 20, 15);  // small-string capacity
     set_eax(c, self);
+}
+
+uint32_t msvcp_string_data(uint32_t object) {
+    if (!object || !gm_valid(object, 24))
+        return 0;
+    return rd32(object + 20) <= 15 ? object : rd32(object);
+}
+
+bool msvcp_string_copy_into(uint32_t self, uint32_t src) {
+    if (!self || !src || !gm_valid(self, 24) || !gm_valid(src, 24))
+        return false;
+
+    const uint32_t n = rd32(src + 16);
+    const uint32_t source = msvcp_string_data(src);
+    if (n > 0x0fffffffu || !source || (n && !gm_valid(source, n)))
+        return false;
+
+    memset(g_mem + self, 0, 24);
+    if (n <= 15) {
+        if (n)
+            memcpy(g_mem + self, g_mem + source, n);
+        g_mem[self + n] = 0;
+        wr32(self + 16, n);
+        wr32(self + 20, 15);
+        return true;
+    }
+
+    const uint32_t data = heap_alloc(n + 1, false);
+    if (!data)
+        return false;
+    memcpy(g_mem + data, g_mem + source, n);
+    g_mem[data + n] = 0;
+    wr32(self, data);
+    wr32(self + 16, n);
+    wr32(self + 20, n);
+    return true;
+}
+
+void msvcp_string_ctor_copy(X86 *c) {
+    const uint32_t self = c->r[R_ECX];
+    set_eax(c, msvcp_string_copy_into(self, arg(c, 0)) ? self : 0);
 }
 
 void msvcp_string_ctor_cstr(X86 *c) {
@@ -514,6 +693,10 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "__getmainargs", ARGC_CDECL, crt_getmainargs},
     {"MSVCR90.dll", "__iob_func", ARGC_CDECL, crt_iob_func},
     {"MSVCR90.dll", "_snprintf", ARGC_CDECL, crt_snprintf},
+    {"MSVCR90.dll", "sprintf", ARGC_CDECL, crt_sprintf},
+    {"MSVCR90.dll", "memmove_s", ARGC_CDECL, crt_memmove_s},
+    {"MSVCR90.dll", "mbstowcs_s", ARGC_CDECL, crt_mbstowcs_s},
+    {"MSVCR90.dll", "_CRT_RTC_INITW", ARGC_CDECL, crt_rtc_initw},
     {"MSVCR90.dll", "malloc", ARGC_CDECL, crt_malloc},
     {"MSVCR90.dll", "calloc", ARGC_CDECL, crt_calloc},
     {"MSVCR90.dll", "realloc", ARGC_CDECL, crt_realloc},
@@ -550,6 +733,9 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCP90.dll",
      "??0?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@PBD@Z",
      1, msvcp_string_ctor_cstr},
+    {"MSVCP90.dll",
+     "??0?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@ABV01@@Z",
+     1, msvcp_string_ctor_copy},
     {"MSVCP90.dll",
      "??1?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@XZ",
      0, msvcp_string_dtor},
