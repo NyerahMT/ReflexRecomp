@@ -45,13 +45,14 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Install build tools
+      - name: Install build and runtime tools
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             clang lld build-essential pkg-config unzip \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
-            libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev
+            libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
+            xvfb xauth libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri
           python3 -m venv .venv
           .venv/bin/python -m pip install -r kit/requirements-dev.txt
 
@@ -119,7 +120,7 @@ jobs:
           head -n 20 "$index" > build/logs/functions-head.txt
           tail -n 20 "$index" > build/logs/functions-tail.txt
 
-      - name: Attempt static translation
+      - name: Translate and compile Reflex game code
         id: translate
         continue-on-error: true
         run: |
@@ -130,6 +131,41 @@ jobs:
             --allow-table-gaps "Reflex Ghidra 12.1.3 recovery leaves six missing block targets in jump table at 0x006a8085 (fn_006a8060); accepted for initial bring-up" \
             --allow-unmodelled "Initial Reflex bring-up: three malformed jump-table recoveries leave 19 literal dispatches without translated entry points; trap only those unresolved paths so the rest of the image can be generated and compiled" \
             2>&1 | tee build/logs/translate.log
+
+      - name: Build Reflex host executable
+        id: host
+        if: steps.translate.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          .venv/bin/python tools/build.py --target app \
+            2>&1 | tee build/logs/host-build.log
+          test -x build/package/ReflexRecomp/ReflexRecomp
+          ldd build/package/ReflexRecomp/ReflexRecomp | tee build/logs/host-ldd.txt
+
+      - name: Probe first Reflex runtime
+        id: boot
+        if: steps.host.outcome == 'success'
+        run: |
+          set -uo pipefail
+          app="$GITHUB_WORKSPACE/build/package/ReflexRecomp/ReflexRecomp"
+          test -x "$app"
+          set +e
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            timeout --signal=TERM --kill-after=5s 30s \
+            env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
+                SDL_AUDIODRIVER=dummy \
+                "$app" \
+            2>&1 | tee build/logs/runtime.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "$rc" > build/logs/runtime-exit-code.txt
+          echo "First Reflex runtime probe exit code: $rc"
+          if [[ "$rc" -eq 124 || "$rc" -eq 137 ]]; then
+            echo "Reflex stayed alive for the 30-second probe window."
+          else
+            echo "Reflex exited during the probe; runtime.log is the next bring-up trace."
+          fi
 
       - name: Upload bring-up logs
         if: always()
@@ -147,4 +183,10 @@ jobs:
         if: steps.translate.outcome != 'success'
         run: |
           echo "Ghidra completed, but static translation hit a bring-up failure. Inspect translate.log and translate-report.json."
+          exit 1
+
+      - name: Fail if host build failed
+        if: steps.translate.outcome == 'success' && steps.host.outcome != 'success'
+        run: |
+          echo "Reflex translated successfully, but the native host executable did not build. Inspect host-build.log."
           exit 1
