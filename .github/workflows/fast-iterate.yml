@@ -166,7 +166,13 @@ jobs:
           echo "Runtime probe exit code: $rc"
 
           if [[ "$rc" -eq 124 || "$rc" -eq 137 ]]; then
-            echo "PASS: Reflex stayed alive for the full 30-second runtime gate."
+            if grep -Eq 'unknown stdcall argument count|SEH: unhandled|call to unknown target|call to 00000000' build/logs/runtime.log; then
+              echo "FAIL: Reflex stayed alive, but the runtime is stuck behind unresolved ABI/control-flow faults."
+              grep -E 'unknown stdcall argument count|SEH: unhandled|call to unknown target|call to 00000000' \
+                build/logs/runtime.log | tail -n 80 || true
+              exit 1
+            fi
+            echo "PASS: Reflex stayed alive for the full 30-second runtime gate without unresolved ABI/control-flow faults."
             exit 0
           fi
 
