@@ -15,7 +15,7 @@ env:
   INPUT_REPO: NyerahMT/ReflexBuildInput
   INPUT_TAG: game-input-v1
   CORE_ASSET: Game-Core.zip
-  BASELINE_TAG: recomp-baseline-v1
+  BASELINE_TAG: game-input-v1
   TRANSLATE_POLICY_REV: "1"
   CCACHE_DIR: ${{ github.workspace }}/.ci-cache/ccache
   CCACHE_BASEDIR: ${{ github.workspace }}
@@ -52,7 +52,7 @@ jobs:
           echo "BASELINE_ASSET=$asset" >> "$GITHUB_ENV"
           echo "Private baseline asset: $asset"
 
-      - name: Verify private baseline write access
+      - name: Verify private baseline release storage
         env:
           GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
         run: |
@@ -61,11 +61,33 @@ jobs:
             echo "::error::Missing Actions secret REFLEX_INPUT_TOKEN"
             exit 1
           fi
-          can_push="$(gh api "repos/$INPUT_REPO" --jq '.permissions.push // false')"
-          if [[ "$can_push" != "true" ]]; then
-            echo "::error::REFLEX_INPUT_TOKEN needs Contents: Read and write access to $INPUT_REPO so CI can store the private recomp baseline."
+
+          # Store generated baselines beside the already-private Game-Core asset.
+          # This avoids needing permission to create a second release/tag.
+          gh release view "$BASELINE_TAG" --repo "$INPUT_REPO" >/dev/null
+
+          probe_name="baseline-write-probe-${GITHUB_RUN_ID}.txt"
+          probe_path="$RUNNER_TEMP/$probe_name"
+          printf 'ReflexRecomp private baseline write probe\n' > "$probe_path"
+
+          if ! gh release upload "$BASELINE_TAG" "$probe_path" \
+            --repo "$INPUT_REPO" \
+            --clobber; then
+            echo "::error::REFLEX_INPUT_TOKEN can read $INPUT_REPO but cannot upload release assets. Give it Contents: Read and write access to NyerahMT/ReflexBuildInput, then rerun."
             exit 1
           fi
+
+          asset_id="$(
+            gh api "repos/$INPUT_REPO/releases/tags/$BASELINE_TAG" \
+              --jq ".assets[] | select(.name == \"$probe_name\") | .id" |
+            head -n 1
+          )"
+          if [[ -z "$asset_id" ]]; then
+            echo "::error::Private release write probe uploaded but could not be located for cleanup."
+            exit 1
+          fi
+          gh api -X DELETE "repos/$INPUT_REPO/releases/assets/$asset_id"
+          echo "Private baseline release storage is writable."
 
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
@@ -182,12 +204,6 @@ jobs:
             .ci-cache/ccache
           test -s "$archive"
 
-          if ! gh release view "$BASELINE_TAG" --repo "$INPUT_REPO" >/dev/null 2>&1; then
-            gh release create "$BASELINE_TAG" \
-              --repo "$INPUT_REPO" \
-              --title "Reflex recomp private baseline" \
-              --notes "Private CI cache for recovered listings, translated sources, and compiler cache."
-          fi
           gh release upload "$BASELINE_TAG" "$archive" \
             --repo "$INPUT_REPO" \
             --clobber
