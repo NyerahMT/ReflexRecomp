@@ -20,7 +20,19 @@ listings = "analysis/decompiled/MXReflex.exe"
 globals = "globals.toml"
 animation_counter = 0x00dcfe00
 volatile_reads = []
-entry_points = []
+# Ghidra 12.1.3 does not promote these valid control-flow destinations to
+# standalone entries in the default Reflex analysis. The translator reaches
+# them through direct/tabled dispatches, so seed them explicitly rather than
+# treating those branches as unmodelled code.
+entry_points = [
+    0x0052d76c,
+    0x006a808c,
+    0x006a8186,
+    0x006a81f6,
+    0x006a8266,
+    0x006a82ab,
+    0x006a831e,
+]
 
 [hooks]
 # Temporary sentinels in zero-filled writable alignment padding of the pinned EXE.
