@@ -1,0 +1,187 @@
+name: Fast Reflex Iteration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-reflex-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIT_REV: eb32cc42623e0e9e868b9d27423a57d5a5cba56b
+  GHIDRA_VERSION: "12.1.3"
+  REFLEX_SHA256: 917d14e7ef7ce492b665fea7d0c87c9a39b549e2a43b09883d2a786988e7c02c
+  INPUT_REPO: NyerahMT/ReflexBuildInput
+  INPUT_TAG: game-input-v1
+  CORE_ASSET: Game-Core.zip
+  BASELINE_TAG: recomp-baseline-v1
+  TRANSLATE_POLICY_REV: "1"
+  CCACHE_DIR: ${{ github.workspace }}/.ci-cache/ccache
+  CCACHE_BASEDIR: ${{ github.workspace }}
+  CCACHE_COMPILERCHECK: content
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
+jobs:
+  build-and-probe:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout ReflexRecomp
+        uses: actions/checkout@v7.0.1
+
+      - name: Checkout pinned recomp-kit
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: veritr1x/recomp-kit
+          ref: ${{ env.KIT_REV }}
+          path: kit
+
+      - name: Patch Reflex SEH continuation
+        run: python3 tools/patch_reflex_seh.py
+
+      - name: Compute private baseline key
+        run: |
+          set -euo pipefail
+          config_sha="$(cat tools/analyze.py game.toml | sha256sum | awk '{print $1}')"
+          asset="Reflex-Baseline-${REFLEX_SHA256:0:12}-g${GHIDRA_VERSION}-k${KIT_REV:0:12}-c${config_sha:0:12}-p${TRANSLATE_POLICY_REV}.tar.gz"
+          echo "BASELINE_ASSET=$asset" >> "$GITHUB_ENV"
+          echo "Looking for private baseline: $asset"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install fast-path build and runtime tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            clang lld build-essential pkg-config unzip ccache \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
+            xvfb xauth libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri
+          python3 -m venv .venv
+          .venv/bin/python -m pip install -r kit/requirements-dev.txt
+
+      - name: Download private Reflex core and recomp baseline
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::Missing Actions secret REFLEX_INPUT_TOKEN"
+            exit 1
+          fi
+          mkdir -p \
+            "$RUNNER_TEMP/reflex-assets" \
+            "$RUNNER_TEMP/reflex-game" \
+            "$RUNNER_TEMP/reflex-baseline"
+
+          gh release download "$INPUT_TAG" \
+            --repo "$INPUT_REPO" \
+            --pattern "$CORE_ASSET" \
+            --dir "$RUNNER_TEMP/reflex-assets" \
+            --clobber
+          test -s "$RUNNER_TEMP/reflex-assets/$CORE_ASSET"
+          unzip -q "$RUNNER_TEMP/reflex-assets/$CORE_ASSET" -d "$RUNNER_TEMP/reflex-game"
+
+          if ! gh release download "$BASELINE_TAG" \
+            --repo "$INPUT_REPO" \
+            --pattern "$BASELINE_ASSET" \
+            --dir "$RUNNER_TEMP/reflex-baseline" \
+            --clobber; then
+            echo "::error::No matching private recomp baseline exists. Run 'Analyze + Translate Reflex' once on this revision/toolchain to create it."
+            exit 1
+          fi
+          test -s "$RUNNER_TEMP/reflex-baseline/$BASELINE_ASSET"
+          tar -xzf "$RUNNER_TEMP/reflex-baseline/$BASELINE_ASSET" -C "$GITHUB_WORKSPACE"
+          test -f analysis/decompiled/MXReflex.exe/functions.tsv
+          test -f build/recomp/gen/table.c
+          test -d "$CCACHE_DIR"
+          ccache --max-size 1G
+          ccache --zero-stats
+
+      - name: Locate and verify private executable
+        run: |
+          set -euo pipefail
+          exe="$(find "$RUNNER_TEMP/reflex-game" -type f -iname 'MXReflex.exe' -print -quit)"
+          if [[ -z "$exe" ]]; then
+            echo "MXReflex.exe was not found after extracting $CORE_ASSET"
+            exit 1
+          fi
+          echo "$REFLEX_SHA256  $exe" | sha256sum -c -
+          game_root="$(dirname "$exe")"
+          echo "REFLEX_GAME_ROOT=$game_root" >> "$GITHUB_ENV"
+
+      - name: Link private game input
+        run: .venv/bin/python tools/setup.py --install "$REFLEX_GAME_ROOT" --link-only
+
+      - name: Build from cached translation
+        id: host
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p build/logs
+          .venv/bin/python tools/build.py --target app \
+            2>&1 | tee build/logs/host-build.log
+          test -x build/package/ReflexRecomp/ReflexRecomp
+          ldd build/package/ReflexRecomp/ReflexRecomp | tee build/logs/host-ldd.txt
+          ccache --show-stats | tee build/logs/ccache-after-build.txt
+
+      - name: Probe Reflex runtime gate
+        id: boot
+        if: steps.host.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          app="$GITHUB_WORKSPACE/build/package/ReflexRecomp/ReflexRecomp"
+          test -x "$app"
+          set +e
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            timeout --signal=TERM --kill-after=5s 30s \
+            env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
+                SDL_AUDIODRIVER=dummy \
+                "$app" \
+            2>&1 | tee build/logs/runtime.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "$rc" > build/logs/runtime-exit-code.txt
+          echo "Runtime probe exit code: $rc"
+
+          if [[ "$rc" -eq 124 || "$rc" -eq 137 ]]; then
+            echo "PASS: Reflex stayed alive for the full 30-second runtime gate."
+            exit 0
+          fi
+
+          echo "FAIL: Reflex exited before the runtime gate completed."
+          grep -E '\[host\] SIG|SEH: unhandled|call to unknown target|unimplemented import|divide error' \
+            build/logs/runtime.log | tail -n 80 || true
+          exit 1
+
+      - name: Upload fast-path logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reflex-fast-logs-${{ github.run_number }}
+          path: build/logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail if host build failed
+        if: steps.host.outcome != 'success'
+        run: |
+          echo "Cached translation restored, but the native host build failed. Inspect host-build.log."
+          exit 1
+
+      - name: Fail if runtime gate exited early
+        if: steps.host.outcome == 'success' && steps.boot.outcome != 'success'
+        run: |
+          echo "Reflex built successfully but exited before the 30-second runtime gate. Inspect runtime.log and runtime-exit-code.txt."
+          exit 1
