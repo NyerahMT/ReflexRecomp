@@ -7,6 +7,7 @@
 #include "imports.h"
 #include "memory.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
