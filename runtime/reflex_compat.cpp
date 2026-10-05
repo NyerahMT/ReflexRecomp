@@ -160,6 +160,115 @@ void crt_srand(X86 *c) {
     set_eax(c, 0);
 }
 
+uint32_t guest_scalar(uint32_t &slot, uint32_t initial) {
+    if (!slot || !heap_owns(slot)) {
+        slot = heap_alloc(4, true);
+        if (slot)
+            wr32(slot, initial);
+    }
+    return slot;
+}
+
+uint32_t g_fmode_addr = 0;
+uint32_t g_commode_addr = 0;
+uint32_t g_controlfp = 0x0009001fu;
+uint32_t g_argv_addr = 0;
+uint32_t g_argv0_addr = 0;
+uint32_t g_envp_addr = 0;
+
+void crt_set_app_type(X86 *c) {
+    set_eax(c, 0);
+}
+
+void crt_p_fmode(X86 *c) {
+    set_eax(c, guest_scalar(g_fmode_addr, 0x4000u)); // _O_TEXT
+}
+
+void crt_p_commode(X86 *c) {
+    set_eax(c, guest_scalar(g_commode_addr, 0));
+}
+
+void crt_controlfp_s(X86 *c) {
+    const uint32_t current = arg(c, 0);
+    const uint32_t value = arg(c, 1);
+    const uint32_t mask = arg(c, 2);
+    g_controlfp = (g_controlfp & ~mask) | (value & mask);
+    if (current && gm_valid(current, 4))
+        wr32(current, g_controlfp);
+    set_eax(c, 0);
+}
+
+void crt_onexit(X86 *c) {
+    // Startup only needs registration to succeed. We do not run host-side
+    // atexit callbacks during forced CI termination.
+    set_eax(c, arg(c, 0));
+}
+
+void crt_getmainargs(X86 *c) {
+    const uint32_t argc_out = arg(c, 0);
+    const uint32_t argv_out = arg(c, 1);
+    const uint32_t env_out = arg(c, 2);
+
+    if (!g_argv0_addr || !heap_owns(g_argv0_addr)) {
+        static const char exe_name[] = "MXReflex.exe";
+        g_argv0_addr = heap_alloc(sizeof exe_name, true);
+        if (g_argv0_addr)
+            memcpy(g_mem + g_argv0_addr, exe_name, sizeof exe_name);
+    }
+    if (!g_argv_addr || !heap_owns(g_argv_addr)) {
+        g_argv_addr = heap_alloc(8, true);
+        if (g_argv_addr) {
+            wr32(g_argv_addr, g_argv0_addr);
+            wr32(g_argv_addr + 4, 0);
+        }
+    }
+    if (!g_envp_addr || !heap_owns(g_envp_addr))
+        g_envp_addr = heap_alloc(4, true);
+
+    if (argc_out && gm_valid(argc_out, 4))
+        wr32(argc_out, 1);
+    if (argv_out && gm_valid(argv_out, 4))
+        wr32(argv_out, g_argv_addr);
+    if (env_out && gm_valid(env_out, 4))
+        wr32(env_out, g_envp_addr);
+    set_eax(c, 0);
+}
+
+void crt_malloc(X86 *c) {
+    set_eax(c, heap_alloc(arg(c, 0), false));
+}
+
+void crt_calloc(X86 *c) {
+    const uint64_t total = uint64_t(arg(c, 0)) * uint64_t(arg(c, 1));
+    set_eax(c, total <= 0xffffffffu ? heap_alloc(uint32_t(total), true) : 0);
+}
+
+void crt_realloc(X86 *c) {
+    const uint32_t p = arg(c, 0);
+    const uint32_t size = arg(c, 1);
+    if (!p) {
+        set_eax(c, heap_alloc(size, false));
+        return;
+    }
+    if (!size) {
+        heap_free(p);
+        set_eax(c, 0);
+        return;
+    }
+    set_eax(c, heap_realloc(p, size, false));
+}
+
+void crt_free(X86 *c) {
+    const uint32_t p = arg(c, 0);
+    if (p)
+        heap_free(p);
+    set_eax(c, 0);
+}
+
+void crt_exception_continue_search(X86 *c) {
+    set_eax(c, 1); // ExceptionContinueSearch
+}
+
 void crt_initterm(X86 *c) {
     const uint32_t first = arg(c, 0);
     const uint32_t last = arg(c, 1);
@@ -208,6 +317,17 @@ const ImportShim k_reflex_shims[] = {
     // Visual C++ 2008 CRT. Explicit cdecl registration is important even for
     // logging-only entries: it prevents the import dispatcher from treating
     // them as unknown stdcall functions and corrupting the guest ESP.
+    {"MSVCR90.dll", "__set_app_type", ARGC_CDECL, crt_set_app_type},
+    {"MSVCR90.dll", "__p__fmode", ARGC_CDECL, crt_p_fmode},
+    {"MSVCR90.dll", "__p__commode", ARGC_CDECL, crt_p_commode},
+    {"MSVCR90.dll", "_controlfp_s", ARGC_CDECL, crt_controlfp_s},
+    {"MSVCR90.dll", "_onexit", ARGC_CDECL, crt_onexit},
+    {"MSVCR90.dll", "__getmainargs", ARGC_CDECL, crt_getmainargs},
+    {"MSVCR90.dll", "malloc", ARGC_CDECL, crt_malloc},
+    {"MSVCR90.dll", "calloc", ARGC_CDECL, crt_calloc},
+    {"MSVCR90.dll", "realloc", ARGC_CDECL, crt_realloc},
+    {"MSVCR90.dll", "free", ARGC_CDECL, crt_free},
+    {"MSVCR90.dll", "__CxxFrameHandler3", ARGC_CDECL, crt_exception_continue_search},
     {"MSVCR90.dll", "_initterm_e", ARGC_CDECL, crt_initterm_e},
     {"MSVCR90.dll", "_initterm", ARGC_CDECL, crt_initterm},
     {"MSVCR90.dll", "memcpy", ARGC_CDECL, crt_memcpy},
@@ -228,8 +348,8 @@ const ImportShim k_reflex_shims[] = {
     // Signature-only for the first pass. Returning zero is preferable to
     // inventing FILE/SEH/onexit semantics, while the cdecl ABI remains correct.
     {"MSVCR90.dll", "fopen", ARGC_CDECL, nullptr},
-    {"MSVCR90.dll", "__dllonexit", ARGC_CDECL, nullptr},
-    {"MSVCR90.dll", "_except_handler4_common", ARGC_CDECL, nullptr},
+    {"MSVCR90.dll", "__dllonexit", ARGC_CDECL, crt_onexit},
+    {"MSVCR90.dll", "_except_handler4_common", ARGC_CDECL, crt_exception_continue_search},
 };
 
 } // namespace
