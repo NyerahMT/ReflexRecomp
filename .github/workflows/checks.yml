@@ -1,0 +1,77 @@
+name: Checks
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIT_REV: eb32cc42623e0e9e868b9d27423a57d5a5cba56b
+
+jobs:
+  scaffold:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            python: .venv/bin/python
+          - os: macos-15
+            python: .venv/bin/python
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout ReflexRecomp
+        uses: actions/checkout@v7.0.1
+
+      - name: Checkout pinned recomp-kit
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: veritr1x/recomp-kit
+          ref: ${{ env.KIT_REV }}
+          path: kit
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install contributor tools
+        run: |
+          python3 -m venv .venv
+          ${{ matrix.python }} -m pip install -r kit/requirements-dev.txt
+
+      - name: Install Linux build prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang lld build-essential pkg-config libasound2-dev \
+            libpulse-dev libaudio-dev libjack-dev libsndio-dev libx11-dev libxext-dev \
+            libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+            libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev \
+            libpipewire-0.3-dev libwayland-dev libdecor-0-dev liburing-dev \
+            mesa-vulkan-drivers glslc
+
+      - name: Kit tests and Reflex config tests
+        run: |
+          ${{ matrix.python }} tools/test.py
+          ${{ matrix.python }} -m pytest -q tests
+
+      - name: Stub native configure/build
+        run: ${{ matrix.python }} tools/build.py --stub
+
+      - name: Unsigned iOS stub compile
+        if: runner.os == 'macOS'
+        run: ${{ matrix.python }} tools/build.py --stub --target ios
