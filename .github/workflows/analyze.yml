@@ -41,8 +41,10 @@ jobs:
           ref: ${{ env.KIT_REV }}
           path: kit
 
-      - name: Patch Reflex SEH continuation
-        run: python3 tools/patch_reflex_seh.py
+      - name: Patch Reflex runtime compatibility
+        run: |
+          python3 tools/patch_reflex_seh.py
+          python3 tools/patch_reflex_runtime.py
 
       - name: Compute private baseline key
         run: |
