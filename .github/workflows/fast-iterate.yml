@@ -17,7 +17,7 @@ env:
   INPUT_REPO: NyerahMT/ReflexBuildInput
   INPUT_TAG: game-input-v1
   CORE_ASSET: Game-Core.zip
-  BASELINE_TAG: recomp-baseline-v1
+  BASELINE_TAG: game-input-v1
   TRANSLATE_POLICY_REV: "1"
   CCACHE_DIR: ${{ github.workspace }}/.ci-cache/ccache
   CCACHE_BASEDIR: ${{ github.workspace }}
