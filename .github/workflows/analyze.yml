@@ -15,6 +15,13 @@ env:
   INPUT_REPO: NyerahMT/ReflexBuildInput
   INPUT_TAG: game-input-v1
   CORE_ASSET: Game-Core.zip
+  BASELINE_TAG: recomp-baseline-v1
+  TRANSLATE_POLICY_REV: "1"
+  CCACHE_DIR: ${{ github.workspace }}/.ci-cache/ccache
+  CCACHE_BASEDIR: ${{ github.workspace }}
+  CCACHE_COMPILERCHECK: content
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
 jobs:
   analyze-and-translate:
@@ -37,6 +44,29 @@ jobs:
       - name: Patch Reflex SEH continuation
         run: python3 tools/patch_reflex_seh.py
 
+      - name: Compute private baseline key
+        run: |
+          set -euo pipefail
+          config_sha="$(cat tools/analyze.py game.toml | sha256sum | awk '{print $1}')"
+          asset="Reflex-Baseline-${REFLEX_SHA256:0:12}-g${GHIDRA_VERSION}-k${KIT_REV:0:12}-c${config_sha:0:12}-p${TRANSLATE_POLICY_REV}.tar.gz"
+          echo "BASELINE_ASSET=$asset" >> "$GITHUB_ENV"
+          echo "Private baseline asset: $asset"
+
+      - name: Verify private baseline write access
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::Missing Actions secret REFLEX_INPUT_TOKEN"
+            exit 1
+          fi
+          can_push="$(gh api "repos/$INPUT_REPO" --jq '.permissions.push // false')"
+          if [[ "$can_push" != "true" ]]; then
+            echo "::error::REFLEX_INPUT_TOKEN needs Contents: Read and write access to $INPUT_REPO so CI can store the private recomp baseline."
+            exit 1
+          fi
+
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
         with:
@@ -52,22 +82,21 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
-            clang lld build-essential pkg-config unzip \
+            clang lld build-essential pkg-config unzip ccache \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
             xvfb xauth libvulkan1 mesa-vulkan-drivers libgl1-mesa-dri
           python3 -m venv .venv
           .venv/bin/python -m pip install -r kit/requirements-dev.txt
+          mkdir -p "$CCACHE_DIR"
+          ccache --max-size 1G
+          ccache --zero-stats
 
       - name: Download private Reflex core release asset
         env:
           GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
         run: |
           set -euo pipefail
-          if [[ -z "${GH_TOKEN:-}" ]]; then
-            echo "Missing Actions secret REFLEX_INPUT_TOKEN"
-            exit 1
-          fi
           mkdir -p "$RUNNER_TEMP/reflex-assets" "$RUNNER_TEMP/reflex-game"
           gh release download "$INPUT_TAG" \
             --repo "$INPUT_REPO" \
@@ -134,6 +163,35 @@ jobs:
             --allow-table-gaps "Reflex Ghidra 12.1.3 recovery leaves six missing block targets in jump table at 0x006a8085 (fn_006a8060); accepted for initial bring-up" \
             --allow-unmodelled "Initial Reflex bring-up: three malformed jump-table recoveries leave 19 literal dispatches without translated entry points; trap only those unresolved paths so the rest of the image can be generated and compiled" \
             2>&1 | tee build/logs/translate.log
+          ccache --show-stats | tee build/logs/ccache-after-translate.txt
+
+      - name: Publish private recovery + translation baseline
+        if: steps.translate.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -f analysis/decompiled/MXReflex.exe/functions.tsv
+          test -f build/recomp/gen/table.c
+          test -d "$CCACHE_DIR"
+
+          archive="$RUNNER_TEMP/$BASELINE_ASSET"
+          tar -czf "$archive" \
+            analysis/decompiled \
+            build/recomp/gen \
+            .ci-cache/ccache
+          test -s "$archive"
+
+          if ! gh release view "$BASELINE_TAG" --repo "$INPUT_REPO" >/dev/null 2>&1; then
+            gh release create "$BASELINE_TAG" \
+              --repo "$INPUT_REPO" \
+              --title "Reflex recomp private baseline" \
+              --notes "Private CI cache for recovered listings, translated sources, and compiler cache."
+          fi
+          gh release upload "$BASELINE_TAG" "$archive" \
+            --repo "$INPUT_REPO" \
+            --clobber
+          echo "Published private baseline: $BASELINE_ASSET"
 
       - name: Build Reflex host executable
         id: host
@@ -149,6 +207,7 @@ jobs:
       - name: Probe first Reflex runtime
         id: boot
         if: steps.host.outcome == 'success'
+        continue-on-error: true
         run: |
           set -uo pipefail
           app="$GITHUB_WORKSPACE/build/package/ReflexRecomp/ReflexRecomp"
@@ -166,9 +225,10 @@ jobs:
           echo "First Reflex runtime probe exit code: $rc"
           if [[ "$rc" -eq 124 || "$rc" -eq 137 ]]; then
             echo "Reflex stayed alive for the 30-second probe window."
-          else
-            echo "Reflex exited during the probe; runtime.log is the next bring-up trace."
+            exit 0
           fi
+          echo "Reflex exited before the probe window completed."
+          exit 1
 
       - name: Upload bring-up logs
         if: always()
@@ -192,4 +252,10 @@ jobs:
         if: steps.translate.outcome == 'success' && steps.host.outcome != 'success'
         run: |
           echo "Reflex translated successfully, but the native host executable did not build. Inspect host-build.log."
+          exit 1
+
+      - name: Fail if runtime probe exited early
+        if: steps.host.outcome == 'success' && steps.boot.outcome != 'success'
+        run: |
+          echo "Reflex built successfully but exited before the 30-second runtime gate. Inspect runtime.log and runtime-exit-code.txt."
           exit 1
