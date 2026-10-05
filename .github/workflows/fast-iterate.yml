@@ -9,6 +9,7 @@ on:
       - "runtime/**"
       - "tools/patch_reflex_runtime.py"
       - "tools/patch_reflex_sse.py"
+      - "tools/patch_reflex_interp.py"
       - "tools/refresh_cached_function.py"
       - "tools/patch_reflex_seh.py"
       - ".github/workflows/fast-iterate.yml"
@@ -58,6 +59,7 @@ jobs:
           python3 tools/patch_reflex_seh.py
           python3 tools/patch_reflex_runtime.py
           python3 tools/patch_reflex_sse.py
+          python3 tools/patch_reflex_interp.py
 
       - name: Compute private baseline key
         run: |
@@ -117,6 +119,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/reflex-baseline/$BASELINE_ASSET" -C "$GITHUB_WORKSPACE"
           test -f analysis/decompiled/MXReflex.exe/functions.tsv
           test -f build/recomp/gen/table.c
+          test -f build/recomp/gen/symbols.json
+          cp build/recomp/gen/symbols.json build/recomp/symbols.json
+          test -f build/recomp/symbols.json
           test -d "$CCACHE_DIR"
           ccache --max-size 1G
           ccache --zero-stats
@@ -136,7 +141,7 @@ jobs:
       - name: Link private game input
         run: .venv/bin/python tools/setup.py --install "$REFLEX_GAME_ROOT" --link-only
 
-      - name: Refresh reached SSE function from private listing
+      - name: Refresh reached SSE functions from private listing
         run: |
           set -euo pipefail
           fresh="$RUNNER_TEMP/reflex-fn-refresh"
@@ -146,20 +151,22 @@ jobs:
           .venv/bin/python kit/tools/recomp/translate.py \
             --game "$GITHUB_WORKSPACE" \
             --out "$fresh" \
-            --only 00903a60 \
-            --allow-table-gaps "Single-function fast refresh uses the established Reflex recovery policy" \
-            --allow-unmodelled "Single-function fast refresh keeps the established Reflex unresolved-path policy"
+            --only 00903a60 00904300 \
+            --allow-table-gaps "Targeted fast refresh uses the established Reflex recovery policy" \
+            --allow-unmodelled "Targeted fast refresh keeps the established Reflex unresolved-path policy"
 
-          python3 tools/refresh_cached_function.py \
-            --cached build/recomp/gen \
-            --fresh "$fresh" \
-            --address 00903a60
+          for addr in 00903a60 00904300; do
+            python3 tools/refresh_cached_function.py \
+              --cached build/recomp/gen \
+              --fresh "$fresh" \
+              --address "$addr"
+          done
 
-          if grep -Rqs 'recomp_unmodelled(c, 0x00903a7cu)' build/recomp/gen; then
-            echo "::error::Reflex SSE refresh still contains the 0x00903a7c trap"
+          if grep -Rqs -E 'recomp_unmodelled\(c, 0x(00903a7c|0090431c)u\)' build/recomp/gen; then
+            echo "::error::Reflex SSE refresh still contains a reached UNPCKLPS trap"
             exit 1
           fi
-          echo "Refreshed private cached translation for fn_00903a60 with packed-single SSE support."
+          echo "Refreshed private cached translations for both reached packed-single SSE initializers."
 
       - name: Build from cached translation
         id: host

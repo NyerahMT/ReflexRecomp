@@ -397,6 +397,19 @@ void crt_snprintf(X86 *c) {
 // MSVC 2008 x86 basic_string<char>: 16-byte small buffer/pointer union,
 // followed by 32-bit size and capacity. This is the one constructor Reflex
 // reaches during startup.
+void msvcp_string_ctor_default(X86 *c) {
+    const uint32_t self = c->r[R_ECX];
+    if (!self || !gm_valid(self, 24)) {
+        set_eax(c, 0);
+        return;
+    }
+
+    memset(g_mem + self, 0, 24);
+    wr32(self + 16, 0);   // size
+    wr32(self + 20, 15);  // small-string capacity
+    set_eax(c, self);
+}
+
 void msvcp_string_ctor_cstr(X86 *c) {
     const uint32_t self = c->r[R_ECX];
     const std::string value = gm_str(arg(c, 0), 0x100000);
@@ -531,6 +544,9 @@ const ImportShim k_reflex_shims[] = {
 
     // MSVC thiscall: ECX carries this; one explicit constructor argument is
     // callee-cleaned, while the destructor has no stack arguments.
+    {"MSVCP90.dll",
+     "??0?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@XZ",
+     0, msvcp_string_ctor_default},
     {"MSVCP90.dll",
      "??0?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@PBD@Z",
      1, msvcp_string_ctor_cstr},
