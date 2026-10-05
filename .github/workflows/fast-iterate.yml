@@ -117,6 +117,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/reflex-baseline/$BASELINE_ASSET" -C "$GITHUB_WORKSPACE"
           test -f analysis/decompiled/MXReflex.exe/functions.tsv
           test -f build/recomp/gen/table.c
+          test -f build/recomp/gen/symbols.json
+          cp build/recomp/gen/symbols.json build/recomp/symbols.json
+          test -f build/recomp/symbols.json
           test -d "$CCACHE_DIR"
           ccache --max-size 1G
           ccache --zero-stats
