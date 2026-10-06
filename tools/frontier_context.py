@@ -111,6 +111,26 @@ def main():
                 write_count += 1
     if write_count == 0:
         print("  none")
+
+    print("member-writes=singleton+0x0c")
+    member_hits = 0
+    funcs = args.listing_root / "functions"
+    for path in sorted(funcs.glob("*.asm")):
+        rows = parse_asm(path)
+        for i, (_, raw) in enumerate(rows):
+            low = raw.lower()
+            m = re.search(r"mov\s+(e(?:ax|cx|dx|bx|si|di)),(?:dword ptr )?\[0x00a95960\]", low)
+            if not m:
+                continue
+            reg = m.group(1)
+            window = rows[i + 1:i + 7]
+            pat = re.compile(rf"\bmov\s+(?:dword ptr\s+)?\[{reg} \+ 0xc\]\s*,", re.I)
+            for _, nxt in window:
+                if pat.search(nxt):
+                    print(f"  {path.stem}: {raw}  ==>  {nxt}")
+                    member_hits += 1
+    if member_hits == 0:
+        print("  none")
     if "007add8d" not in {a.lower().removeprefix("0x") for a in args.addresses}:
         args.addresses.append("007add8d")
     for raw in args.addresses:
