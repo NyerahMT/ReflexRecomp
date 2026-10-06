@@ -181,6 +181,27 @@ def print_generated_stdio_hits():
     if hits == 0:
         print("  none")
 
+
+def print_callers(root: Path, target: str, limit: int = 40):
+    print(f"callers={target}")
+    funcs = root / "functions"
+    needle = f"call {target}".lower()
+    hits = 0
+    for path in sorted(funcs.glob("*.asm")):
+        rows = parse_asm(path)
+        for i, (_, raw) in enumerate(rows):
+            if needle in raw.lower():
+                lo = max(0, i - 7)
+                print(f"  function={path.stem}")
+                for _, row in rows[lo:i + 2]:
+                    print(f"    {row}")
+                hits += 1
+                if hits >= limit:
+                    print("  ... truncated")
+                    return
+    if hits == 0:
+        print("  none")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("listing_root", type=Path)
@@ -188,6 +209,7 @@ def main():
     args = ap.parse_args()
 
     names = load_names(args.listing_root)
+    print_callers(args.listing_root, "0x008104d0", 24)
     print_stdio_metadata(args.listing_root)
     print_string_rows(args.listing_root, ["00952780", "0096d61c", "0096d644", "00970d84", "0096def0", "0096dee4", "009772a8", "00976b18", "00974650"])
     print_literal_xrefs(args.listing_root, "0x00a95960")
