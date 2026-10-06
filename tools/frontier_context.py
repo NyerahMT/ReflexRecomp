@@ -234,6 +234,10 @@ def main():
     print_symbol_hits()
     print_generated_stdio_hits()
     print_callers(args.listing_root, "0x008104d0", 24)
+    print_callers(args.listing_root, "0x008434f0", 40)
+    print_callers(args.listing_root, "0x0084df50", 40)
+    print_callers(args.listing_root, "0x00880470", 40)
+    print_callers(args.listing_root, "0x005c3380", 40)
     print_stdio_metadata(args.listing_root)
     print_string_rows(args.listing_root, ["00952780", "0096d61c", "0096d644", "00970d84", "0096def0", "0096dee4", "009772a8", "00976b18", "00974650"])
     print_function_strings(args.listing_root, ["007562b0", "007564f0", "00756e10"])
@@ -270,8 +274,16 @@ def main():
                     member_hits += 1
     if member_hits == 0:
         print("  none")
-    if "007add8d" not in {a.lower().removeprefix("0x") for a in args.addresses}:
-        args.addresses.append("007add8d")
+    required = {
+        "007add8d",
+        "0084dfb0", "0084dfbb", "0084dfc0", "0084dfc9", "0084dfd0",
+        "00843546", "0084357d", "00843584", "008435a0", "008435c0",
+        "008804a8", "008804d0", "008804f4", "00880510",
+        "005c3380",
+    }
+    present = {a.lower().removeprefix("0x") for a in args.addresses}
+    for address in sorted(required - present):
+        args.addresses.append(address)
     for raw in args.addresses:
         target = int(raw.lower().removeprefix("0x"), 16)
         context_for(args.listing_root, target, names)
