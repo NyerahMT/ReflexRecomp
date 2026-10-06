@@ -19,7 +19,16 @@ def main():
         return
     if text.count(ANCHOR) != 1:
         raise SystemExit("expected exactly one recomp_call anchor")
-    trace = ANCHOR + """    if (target == 0x008244c0u) {
+    trace = ANCHOR + """    const uint32_t trace_esp = c->r[R_ESP];
+    const uint32_t trace_ret = rd32(trace_esp);
+    if (trace_ret == 0x007add47u) {
+        fprintf(stderr,
+                "[recomp] reflex producer trace 007add45: target=%08x esp=%08x ecx=%08x "
+                "a0=%08x a1=%08x a2=%08x eax=%08x edx=%08x esi=%08x edi=%08x\\n",
+                target, trace_esp, c->r[R_ECX], rd32(trace_esp + 4), rd32(trace_esp + 8),
+                rd32(trace_esp + 12), c->r[R_EAX], c->r[R_EDX], c->r[R_ESI], c->r[R_EDI]);
+    }
+    if (target == 0x008244c0u) {
         const uint32_t esp = c->r[R_ESP];
         const uint32_t ret = rd32(esp);
         const uint32_t arg0 = rd32(esp + 4);
@@ -31,7 +40,7 @@ def main():
     }
 """
     TABLE.write_text(text.replace(ANCHOR, trace, 1))
-    print("Instrumented cached dispatch for Registry::FUN_008244c0 caller trace")
+    print("Instrumented cached dispatch for Reflex null-producer and caller traces")
 
 if __name__ == "__main__":
     main()
