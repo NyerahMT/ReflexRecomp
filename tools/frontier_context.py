@@ -130,6 +130,33 @@ def print_stdio_metadata(root: Path):
     if hits == 0:
         print("  none")
 
+
+def print_symbol_hits():
+    path = ROOT / "build" / "recomp" / "gen" / "symbols.json"
+    print("symbol-hits:")
+    if not path.is_file():
+        print("  symbols.json missing")
+        return
+    raw = path.read_text(errors="replace")
+    needles = ("fopen", "fread", "fgets", "fseek", "ftell", "fclose",
+               "009162dc", "009162f0", "0x009162dc", "0x009162f0")
+    seen = set()
+    for needle in needles:
+        start = 0
+        while True:
+            i = raw.lower().find(needle.lower(), start)
+            if i < 0:
+                break
+            snippet = raw[max(0, i - 180):min(len(raw), i + 260)].replace("\n", " ")
+            if snippet not in seen:
+                print("  " + snippet)
+                seen.add(snippet)
+            start = i + len(needle)
+            if len(seen) >= 30:
+                return
+    if not seen:
+        print("  none")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("listing_root", type=Path)
