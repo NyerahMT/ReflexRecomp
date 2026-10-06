@@ -49,6 +49,29 @@ def main() -> None:
         "reflex_compat_register();",
     )
 
+    cpu = KIT / "runtime" / "cpu.cpp"
+    replace_once(
+        cpu,
+        "    uint32_t ret = rd32(c->r[R_ESP]);\n"
+        "    // Windows maps nothing in the first 64 KB, so a call there - through a nil\n",
+        "    uint32_t ret = rd32(c->r[R_ESP]);\n"
+        "    if (target == 0 && ret == 0x008244e8u) {\n"
+        "        const uint32_t wrapper = c->r[R_ESI];\n"
+        "        const uint32_t cs = (wrapper && gm_valid(wrapper, 8)) ? rd32(wrapper) : 0;\n"
+        "        const uint32_t aux = (wrapper && gm_valid(wrapper, 8)) ? rd32(wrapper + 4) : 0;\n"
+        "        const uint32_t obj = (cs && gm_valid(cs + 0x18, 4)) ? rd32(cs + 0x18) : 0;\n"
+        "        const uint32_t vt = (obj && gm_valid(obj, 4)) ? rd32(obj) : 0;\n"
+        "        const uint32_t slot = (vt && gm_valid(vt + 0xe4, 4)) ? rd32(vt + 0xe4) : 0;\n"
+        "        const uint32_t a0 = gm_valid(c->r[R_ESP] + 4, 12) ? rd32(c->r[R_ESP] + 4) : 0;\n"
+        "        const uint32_t a1 = gm_valid(c->r[R_ESP] + 8, 8) ? rd32(c->r[R_ESP] + 8) : 0;\n"
+        "        const uint32_t a2 = gm_valid(c->r[R_ESP] + 12, 4) ? rd32(c->r[R_ESP] + 12) : 0;\n"
+        "        LOGW(\"reflex frontier 008244e8: wrapper=%08x cs=%08x aux=%08x ecx=%08x obj=%08x vt=%08x slot_e4=%08x args=%08x,%08x,%08x\",\n"
+        "             wrapper, cs, aux, c->r[R_ECX], obj, vt, slot, a0, a1, a2);\n"
+        "    }\n"
+        "    // Windows maps nothing in the first 64 KB, so a call there - through a nil\n",
+        "reflex frontier 008244e8:",
+    )
+
     print("Applied Reflex runtime import/ABI compatibility patch")
 
 
