@@ -197,8 +197,10 @@ void crt_strpbrk(X86 *c) {
 }
 
 void crt_fopen_unavailable(X86 *c) {
-    // File I/O is not required for the current boot probe, but a real handler
-    // is used so the cdecl signature overrides any generic logging stub.
+    const std::string path = gm_str(arg(c, 0), 4096);
+    const std::string mode = gm_str(arg(c, 1), 64);
+    fprintf(stderr, "[recomp] fopen unavailable: path=\"%s\" mode=\"%s\"\\n",
+            path.c_str(), mode.c_str());
     set_eax(c, 0);
 }
 
