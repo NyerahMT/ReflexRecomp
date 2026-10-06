@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add the packed-single unpack forms Reflex reaches to the pinned translator."""
+"""Patch scalar/packed SSE forms Reflex reaches in the pinned translator."""
 
 from pathlib import Path
 
@@ -20,6 +20,14 @@ def main() -> None:
         raise SystemExit(f"missing pinned translator: {TRANSLATOR}")
 
     text = TRANSLATOR.read_text()
+    text = replace_once(
+        text,
+        '            single = m.endswith("SS") and m not in ("CVTSD2SS",)\n',
+        '            single = ((m.endswith("SS") and m not in ("CVTSD2SS",))\n'
+        '                      or m == "CVTTSS2SI")\n',
+        'or m == "CVTTSS2SI"',
+    )
+
     text = replace_once(
         text,
         'SSE_LANE_FORMS = ("PANDN", "ANDNPD", "ANDNPS", "PCMPEQD", "PUNPCKLDQ", "PUNPCKHDQ",\n'
