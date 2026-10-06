@@ -209,6 +209,8 @@ def main():
     args = ap.parse_args()
 
     names = load_names(args.listing_root)
+    print_symbol_hits()
+    print_generated_stdio_hits()
     print_callers(args.listing_root, "0x008104d0", 24)
     print_stdio_metadata(args.listing_root)
     print_string_rows(args.listing_root, ["00952780", "0096d61c", "0096d644", "00970d84", "0096def0", "0096dee4", "009772a8", "00976b18", "00974650"])
