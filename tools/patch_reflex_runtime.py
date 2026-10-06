@@ -98,6 +98,14 @@ def main() -> None:
         "        LOGW(\"reflex frontier 008244e8: wrapper=%08x cs=%08x aux=%08x ecx=%08x obj=%08x vt=%08x slot_e4=%08x args=%08x,%08x,%08x\",\n"
         "             wrapper, cs, aux, c->r[R_ECX], obj, vt, slot, a0, a1, a2);\n"
         "    }\n"
+        "    if (target == 0 && ret == 0x007ade7au) {\n"
+        "        const uint32_t obj = gm_valid(c->r[R_ESP] + 4, 4) ? rd32(c->r[R_ESP] + 4) : 0;\n"
+        "        const uint32_t out = gm_valid(c->r[R_ESP] + 8, 4) ? rd32(c->r[R_ESP] + 8) : 0;\n"
+        "        const uint32_t vt = (obj && gm_valid(obj, 4)) ? rd32(obj) : 0;\n"
+        "        const uint32_t slot = (vt && gm_valid(vt + 0x0c, 4)) ? rd32(vt + 0x0c) : 0;\n"
+        "        LOGW(\"reflex frontier 007ade7a: obj=%08x vt=%08x slot_0c=%08x out=%08x esi=%08x edi=%08x\",\n"
+        "             obj, vt, slot, out, c->r[R_ESI], c->r[R_EDI]);\n"
+        "    }\n"
         "    // Windows maps nothing in the first 64 KB, so a call there - through a nil\n",
         "reflex frontier 008244e8:",
     )
