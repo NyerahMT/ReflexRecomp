@@ -13,7 +13,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 
 namespace {
 
@@ -196,12 +198,226 @@ void crt_strpbrk(X86 *c) {
     set_eax(c, 0);
 }
 
-void crt_fopen_unavailable(X86 *c) {
-    const std::string path = gm_str(arg(c, 0), 4096);
+std::mutex g_file_mutex;
+std::unordered_map<uint32_t, std::FILE *> g_guest_files;
+
+std::string host_path_for_guest(std::string path) {
+    std::replace(path.begin(), path.end(), '\\', '/');
+    const bool absolute =
+        (!path.empty() && path.front() == '/') ||
+        (path.size() >= 2 && std::isalpha(static_cast<unsigned char>(path[0])) &&
+         path[1] == ':');
+    if (absolute)
+        return path;
+
+    const char *exe_env = std::getenv("RECOMP_EXE");
+    if (!exe_env || !*exe_env)
+        return path;
+
+    std::string exe(exe_env);
+    std::replace(exe.begin(), exe.end(), '\\', '/');
+    const size_t slash = exe.find_last_of('/');
+    if (slash == std::string::npos)
+        return path;
+    return exe.substr(0, slash + 1) + path;
+}
+
+std::FILE *guest_file_locked(uint32_t handle) {
+    const auto it = g_guest_files.find(handle);
+    return it == g_guest_files.end() ? nullptr : it->second;
+}
+
+void crt_fopen(X86 *c) {
+    const std::string guest_path = gm_str(arg(c, 0), 4096);
     const std::string mode = gm_str(arg(c, 1), 64);
-    fprintf(stderr, "[recomp] fopen unavailable: path=\"%s\" mode=\"%s\"\\n",
-            path.c_str(), mode.c_str());
+    const std::string host_path = host_path_for_guest(guest_path);
+    std::FILE *file = std::fopen(host_path.c_str(), mode.c_str());
+    if (!file) {
+        fprintf(stderr,
+                "[recomp] fopen failed: guest=\"%s\" host=\"%s\" mode=\"%s\"\\n",
+                guest_path.c_str(), host_path.c_str(), mode.c_str());
+        set_eax(c, 0);
+        return;
+    }
+
+    constexpr uint32_t kGuestFileSize = 32;
+    const uint32_t handle = heap_alloc(kGuestFileSize, true);
+    if (!handle) {
+        std::fclose(file);
+        set_eax(c, 0);
+        return;
+    }
+
+    // Keep a plausible VS2008 FILE shell in guest memory. Reflex normally
+    // treats FILE* as opaque, but the _file field is useful if anything peeks.
+    wr32(handle + 16, 3);
+    {
+        std::lock_guard<std::mutex> lock(g_file_mutex);
+        g_guest_files.emplace(handle, file);
+    }
+    fprintf(stderr,
+            "[recomp] fopen ok: guest=\"%s\" mode=\"%s\" handle=%08x\\n",
+            guest_path.c_str(), mode.c_str(), handle);
+    set_eax(c, handle);
+}
+
+void crt_fclose(X86 *c) {
+    const uint32_t handle = arg(c, 0);
+    std::FILE *file = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_file_mutex);
+        const auto it = g_guest_files.find(handle);
+        if (it != g_guest_files.end()) {
+            file = it->second;
+            g_guest_files.erase(it);
+        }
+    }
+    if (!file) {
+        set_eax(c, static_cast<uint32_t>(-1));
+        return;
+    }
+    const int rc = std::fclose(file);
+    if (heap_owns(handle))
+        heap_free(handle);
+    set_eax(c, static_cast<uint32_t>(rc));
+}
+
+void crt_fread(X86 *c) {
+    const uint32_t dst = arg(c, 0);
+    const uint32_t size = arg(c, 1);
+    const uint32_t count = arg(c, 2);
+    const uint32_t handle = arg(c, 3);
+    if (!size || !count) {
+        set_eax(c, 0);
+        return;
+    }
+    const uint64_t bytes = uint64_t(size) * uint64_t(count);
+    if (bytes > 0xffffffffu || !dst ||
+        !gm_valid(dst, static_cast<uint32_t>(bytes))) {
+        set_eax(c, 0);
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(g_file_mutex);
+    std::FILE *file = guest_file_locked(handle);
+    if (!file) {
+        set_eax(c, 0);
+        return;
+    }
+    set_eax(c, static_cast<uint32_t>(
+                   std::fread(g_mem + dst, size, count, file)));
+}
+
+void crt_fwrite(X86 *c) {
+    const uint32_t src = arg(c, 0);
+    const uint32_t size = arg(c, 1);
+    const uint32_t count = arg(c, 2);
+    const uint32_t handle = arg(c, 3);
+    if (!size || !count) {
+        set_eax(c, 0);
+        return;
+    }
+    const uint64_t bytes = uint64_t(size) * uint64_t(count);
+    if (bytes > 0xffffffffu || !src ||
+        !gm_valid(src, static_cast<uint32_t>(bytes))) {
+        set_eax(c, 0);
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(g_file_mutex);
+    std::FILE *file = guest_file_locked(handle);
+    if (!file) {
+        set_eax(c, 0);
+        return;
+    }
+    set_eax(c, static_cast<uint32_t>(
+                   std::fwrite(g_mem + src, size, count, file)));
+}
+
+void crt_fgets(X86 *c) {
+    const uint32_t dst = arg(c, 0);
+    const int32_t cap = static_cast<int32_t>(arg(c, 1));
+    const uint32_t handle = arg(c, 2);
+    if (!dst || cap <= 0 || !gm_valid(dst, static_cast<uint32_t>(cap))) {
+        set_eax(c, 0);
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(g_file_mutex);
+    std::FILE *file = guest_file_locked(handle);
+    if (!file) {
+        set_eax(c, 0);
+        return;
+    }
+    set_eax(c, std::fgets(reinterpret_cast<char *>(g_mem + dst), cap, file)
+                   ? dst
+                   : 0u);
+}
+
+void crt_fseek(X86 *c) {
+    const uint32_t handle = arg(c, 0);
+    const int32_t offset = static_cast<int32_t>(arg(c, 1));
+    const int origin = static_cast<int>(arg(c, 2));
+    std::lock_guard<std::mutex> lock(g_file_mutex);
+    std::FILE *file = guest_file_locked(handle);
+    set_eax(c, file ? static_cast<uint32_t>(std::fseek(file, offset, origin))
+                    : static_cast<uint32_t>(-1));
+}
+
+void crt_ftell(X86 *c) {
+    const uint32_t handle = arg(c, 0);
+    std::lock_guard<std::mutex> lock(g_file_mutex);
+    std::FILE *file = guest_file_locked(handle);
+    if (!file) {
+        set_eax(c, static_cast<uint32_t>(-1));
+        return;
+    }
+    const long pos = std::ftell(file);
+    if (pos < 0 || static_cast<unsigned long>(pos) > 0x7ffffffful)
+        set_eax(c, static_cast<uint32_t>(-1));
+    else
+        set_eax(c, static_cast<uint32_t>(pos));
+}
+
+void crt_feof(X86 *c) {
+    const uint32_t handle = arg(c, 0);
+    std::lock_guard<std::mutex> lock(g_file_mutex);
+    std::FILE *file = guest_file_locked(handle);
+    set_eax(c, file ? static_cast<uint32_t>(std::feof(file)) : 1u);
+}
+
+void crt_fgetc(X86 *c) {
+    const uint32_t handle = arg(c, 0);
+    std::lock_guard<std::mutex> lock(g_file_mutex);
+    std::FILE *file = guest_file_locked(handle);
+    set_eax(c, file ? static_cast<uint32_t>(std::fgetc(file))
+                    : static_cast<uint32_t>(-1));
+}
+
+void crt_ungetc(X86 *c) {
+    const int ch = static_cast<int>(arg(c, 0));
+    const uint32_t handle = arg(c, 1);
+    std::lock_guard<std::mutex> lock(g_file_mutex);
+    std::FILE *file = guest_file_locked(handle);
+    set_eax(c, file ? static_cast<uint32_t>(std::ungetc(ch, file))
+                    : static_cast<uint32_t>(-1));
+}
+
+void crt_rewind(X86 *c) {
+    const uint32_t handle = arg(c, 0);
+    std::lock_guard<std::mutex> lock(g_file_mutex);
+    std::FILE *file = guest_file_locked(handle);
+    if (file)
+        std::rewind(file);
     set_eax(c, 0);
+}
+
+void crt_fflush(X86 *c) {
+    const uint32_t handle = arg(c, 0);
+    std::lock_guard<std::mutex> lock(g_file_mutex);
+    std::FILE *file = guest_file_locked(handle);
+    set_eax(c, file ? static_cast<uint32_t>(std::fflush(file))
+                    : static_cast<uint32_t>(-1));
 }
 
 void crt_cipow(X86 *c) {
@@ -1058,9 +1274,20 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "srand", ARGC_CDECL, crt_srand},
     {"MSVCR90.dll", "_CIpow", ARGC_CDECL, crt_cipow},
 
-    // Signature-only for the first pass. Returning zero is preferable to
-    // inventing FILE/SEH/onexit semantics, while the cdecl ABI remains correct.
-    {"MSVCR90.dll", "fopen", ARGC_CDECL, crt_fopen_unavailable},
+    // Host-backed stdio. FILE* values exposed to the guest are opaque guest
+    // handles; host FILE* pointers never escape into the 32-bit address space.
+    {"MSVCR90.dll", "fopen", ARGC_CDECL, crt_fopen},
+    {"MSVCR90.dll", "fclose", ARGC_CDECL, crt_fclose},
+    {"MSVCR90.dll", "fread", ARGC_CDECL, crt_fread},
+    {"MSVCR90.dll", "fwrite", ARGC_CDECL, crt_fwrite},
+    {"MSVCR90.dll", "fgets", ARGC_CDECL, crt_fgets},
+    {"MSVCR90.dll", "fseek", ARGC_CDECL, crt_fseek},
+    {"MSVCR90.dll", "ftell", ARGC_CDECL, crt_ftell},
+    {"MSVCR90.dll", "feof", ARGC_CDECL, crt_feof},
+    {"MSVCR90.dll", "fgetc", ARGC_CDECL, crt_fgetc},
+    {"MSVCR90.dll", "ungetc", ARGC_CDECL, crt_ungetc},
+    {"MSVCR90.dll", "rewind", ARGC_CDECL, crt_rewind},
+    {"MSVCR90.dll", "fflush", ARGC_CDECL, crt_fflush},
     {"MSVCR90.dll", "__dllonexit", ARGC_CDECL, crt_onexit},
     {"MSVCR90.dll", "_except_handler4_common", ARGC_CDECL, crt_exception_continue_search},
 
