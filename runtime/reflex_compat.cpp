@@ -122,6 +122,51 @@ void crt_strlen(X86 *c) {
     set_eax(c, static_cast<uint32_t>(gm_str(arg(c, 0)).size()));
 }
 
+void crt_strchr(X86 *c) {
+    const uint32_t src = arg(c, 0);
+    const uint8_t needle = static_cast<uint8_t>(arg(c, 1) & 0xffu);
+    if (!src) {
+        set_eax(c, 0);
+        return;
+    }
+    for (uint32_t i = 0; i < 0x100000u && gm_valid(src + i, 1); ++i) {
+        const uint8_t ch = g_mem[src + i];
+        if (ch == needle) {
+            set_eax(c, src + i);
+            return;
+        }
+        if (!ch)
+            break;
+    }
+    set_eax(c, 0);
+}
+
+void crt_invalid_parameter_noinfo(X86 *c) {
+    // The retail CRT reports the contract violation through its invalid
+    // parameter handler. Bring-up only needs the call to preserve the ABI.
+    set_eax(c, 0);
+}
+
+void crt_type_info_name_internal(X86 *c) {
+    // VS2008 x86 type_info is { vtable*, cached_name*, mangled[] }.
+    // Returning the in-object raw name is sufficient for startup diagnostics;
+    // strip the leading '.' used by MSVC's stored decorated name.
+    const uint32_t self = c->r[R_ECX];
+    if (!self || !gm_valid(self, 9)) {
+        set_eax(c, 0);
+        return;
+    }
+    const uint32_t cached = rd32(self + 4);
+    if (cached && gm_valid(cached, 1)) {
+        set_eax(c, cached);
+        return;
+    }
+    uint32_t raw = self + 8;
+    if (g_mem[raw] == '.' && gm_valid(raw + 1, 1))
+        ++raw;
+    set_eax(c, raw);
+}
+
 void crt_tolower(X86 *c) {
     const int32_t v = static_cast<int32_t>(arg(c, 0));
     if (v >= 0 && v <= 255)
@@ -644,6 +689,88 @@ void msvcp_string_ctor_cstr(X86 *c) {
     set_eax(c, self);
 }
 
+bool msvcp_string_assign_value(uint32_t self, const std::string &value) {
+    if (!self || !gm_valid(self, 24) || value.size() > 0x0fffffffu)
+        return false;
+
+    const uint32_t n = static_cast<uint32_t>(value.size());
+    uint32_t fresh = 0;
+    if (n > 15) {
+        fresh = heap_alloc(n + 1, false);
+        if (!fresh)
+            return false;
+        if (n)
+            memcpy(g_mem + fresh, value.data(), n);
+        g_mem[fresh + n] = 0;
+    }
+
+    const uint32_t old_capacity = rd32(self + 20);
+    const uint32_t old_data = old_capacity > 15 ? rd32(self) : 0;
+    if (old_data && heap_owns(old_data))
+        heap_free(old_data);
+
+    memset(g_mem + self, 0, 24);
+    if (n <= 15) {
+        if (n)
+            memcpy(g_mem + self, value.data(), n);
+        g_mem[self + n] = 0;
+        wr32(self + 16, n);
+        wr32(self + 20, 15);
+    } else {
+        wr32(self, fresh);
+        wr32(self + 16, n);
+        wr32(self + 20, n);
+    }
+    return true;
+}
+
+void msvcp_string_assign_cstr(X86 *c) {
+    const uint32_t self = c->r[R_ECX];
+    const std::string value = gm_str(arg(c, 0), 0x100000);
+    set_eax(c, msvcp_string_assign_value(self, value) ? self : 0);
+}
+
+void msvcp_string_resize(X86 *c) {
+    const uint32_t self = c->r[R_ECX];
+    const uint32_t requested = arg(c, 0);
+    if (!self || !gm_valid(self, 24) || requested > 0x01000000u) {
+        set_eax(c, 0);
+        return;
+    }
+
+    const uint32_t old_size = rd32(self + 16);
+    const uint32_t old_data = msvcp_string_data(self);
+    if (old_size > 0x01000000u ||
+        (old_size && (!old_data || !gm_valid(old_data, old_size)))) {
+        set_eax(c, 0);
+        return;
+    }
+
+    std::string value;
+    if (old_size)
+        value.assign(reinterpret_cast<const char *>(g_mem + old_data), old_size);
+    value.resize(requested, '\0');
+    set_eax(c, msvcp_string_assign_value(self, value) ? self : 0);
+}
+
+void msvcp_char_traits_copy_s(X86 *c) {
+    const uint32_t dst = arg(c, 0);
+    const uint32_t dst_size = arg(c, 1);
+    const uint32_t src = arg(c, 2);
+    const uint32_t count = arg(c, 3);
+    if (!count) {
+        set_eax(c, dst);
+        return;
+    }
+    if (!dst || !src || count > dst_size ||
+        !gm_valid(dst, count) || !gm_valid(src, count)) {
+        set_eax(c, 0);
+        return;
+    }
+    memmove(g_mem + dst, g_mem + src, count);
+    set_eax(c, dst);
+}
+
 int msvcp_string_compare(uint32_t left, uint32_t right) {
     if (!left || !right || !gm_valid(left, 24) || !gm_valid(right, 24))
         return 0;
@@ -763,6 +890,12 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "_stricmp", ARGC_CDECL, crt_stricmp},
     {"MSVCR90.dll", "strcmp", ARGC_CDECL, crt_strcmp},
     {"MSVCR90.dll", "strlen", ARGC_CDECL, crt_strlen},
+    {"MSVCR90.dll", "strchr", ARGC_CDECL, crt_strchr},
+    {"MSVCR90.dll", "_invalid_parameter_noinfo", ARGC_CDECL,
+     crt_invalid_parameter_noinfo},
+    {"MSVCR90.dll",
+     "?_name_internal_method@type_info@@QBEPBDPAU__type_info_node@@@Z",
+     1, crt_type_info_name_internal},
     {"MSVCR90.dll", "tolower", ARGC_CDECL, crt_tolower},
     {"MSVCR90.dll", "_aligned_malloc", ARGC_CDECL, crt_aligned_malloc},
     {"MSVCR90.dll", "_aligned_free", ARGC_CDECL, crt_aligned_free},
@@ -792,6 +925,15 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCP90.dll",
      "??1?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@XZ",
      0, msvcp_string_dtor},
+    {"MSVCP90.dll",
+     "?resize@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEXI@Z",
+     1, msvcp_string_resize},
+    {"MSVCP90.dll",
+     "??4?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEAAV01@PBD@Z",
+     1, msvcp_string_assign_cstr},
+    {"MSVCP90.dll",
+     "?_Copy_s@?$char_traits@D@std@@SAPADPADIPBDI@Z",
+     ARGC_CDECL, msvcp_char_traits_copy_s},
     {"MSVCP90.dll",
      "??$?MDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z",
      ARGC_CDECL, msvcp_string_less},
