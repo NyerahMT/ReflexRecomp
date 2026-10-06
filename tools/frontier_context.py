@@ -202,6 +202,26 @@ def print_callers(root: Path, target: str, limit: int = 40):
     if hits == 0:
         print("  none")
 
+
+def print_function_strings(root: Path, functions):
+    path = root / "strings.tsv"
+    print("function-strings:")
+    if not path.is_file():
+        print("  strings.tsv missing")
+        return
+    wanted = {f.lower().removeprefix("0x").lstrip("0") for f in functions}
+    hits = 0
+    for raw in path.read_text(errors="replace").splitlines():
+        fields = raw.split("\t")
+        if len(fields) < 4:
+            continue
+        fn = fields[2].lower().removeprefix("0x").lstrip("0")
+        if fn in wanted:
+            print("  " + raw)
+            hits += 1
+    if hits == 0:
+        print("  none")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("listing_root", type=Path)
@@ -214,6 +234,7 @@ def main():
     print_callers(args.listing_root, "0x008104d0", 24)
     print_stdio_metadata(args.listing_root)
     print_string_rows(args.listing_root, ["00952780", "0096d61c", "0096d644", "00970d84", "0096def0", "0096dee4", "009772a8", "00976b18", "00974650"])
+    print_function_strings(args.listing_root, ["007562b0", "007564f0", "00756e10"])
     print_literal_xrefs(args.listing_root, "0x00a95960")
     for literal in ("0x952780", "0x96d61c", "0x96d644", "0x970d84"):
         print_literal_xrefs(args.listing_root, literal, 24)
