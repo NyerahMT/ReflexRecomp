@@ -99,6 +99,8 @@ def main():
 
     names = load_names(args.listing_root)
     print_literal_xrefs(args.listing_root, "0x00a95960")
+    for literal in ("0x00952780", "0x0096d61c", "0x0096d644", "0x00970d84"):
+        print_literal_xrefs(args.listing_root, literal, 24)
     print("writes=0x00a95960")
     write_count = 0
     for path in sorted((args.listing_root / "functions").glob("*.asm")):
