@@ -151,14 +151,14 @@ jobs:
         run: |
           set -euo pipefail
           asm_root="analysis/decompiled/MXReflex.exe/functions"
-          hit="$(grep -l -i -m1 '^008244e8  ' "$asm_root"/*.asm | head -n 1 || true)"
+          hit="$(grep -l -i -m1 '^007ade7a  ' "$asm_root"/*.asm | head -n 1 || true)"
           if [[ -z "$hit" ]]; then
             echo "::error::Could not map runtime return address 0x008244E8 into the private Reflex listing"
             exit 1
           fi
           frontier_fn="$(basename "$hit" .asm)"
           echo "REFLEX_FRONTIER_FN=$frontier_fn" >> "$GITHUB_ENV"
-          echo "Mapped runtime return 0x008244E8 to private function $frontier_fn"
+          echo "Mapped runtime return 0x007ADE7A to private function $frontier_fn"
 
       - name: Refresh reached SSE functions from private listing
         run: |
