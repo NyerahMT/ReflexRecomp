@@ -25,6 +25,12 @@ volatile_reads = []
 # them through direct/tabled dispatches, so seed them explicitly rather than
 # treating those branches as unmodelled code.
 entry_points = [
+    # Runtime-proven callable entries. These are valid listed functions/thunks,
+    # but the current baseline omitted them from recomp_func_addrs, causing
+    # direct CALLs to fall through to recomp_unknown_call.
+    0x005c3380,
+    0x005c33c0,
+    0x008fa06a,
     0x0052d76c,
     0x006a808c,
     0x006a8186,
