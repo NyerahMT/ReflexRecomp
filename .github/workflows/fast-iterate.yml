@@ -2,6 +2,11 @@ name: Fast Reflex Iteration
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - "Analyze + Translate Reflex"
+    types:
+      - completed
   push:
     branches:
       - main
