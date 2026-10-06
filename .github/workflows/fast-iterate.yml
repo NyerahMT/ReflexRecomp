@@ -181,6 +181,9 @@ jobs:
           fi
           echo "Refreshed private cached translations for all currently reached/adjacent packed-single SSE initializers."
 
+      - name: Instrument current Registry caller frontier
+        run: python3 tools/patch_reflex_call_trace.py
+
       - name: Build from cached translation
         id: host
         continue-on-error: true
