@@ -157,6 +157,30 @@ def print_symbol_hits():
     if not seen:
         print("  none")
 
+
+def print_generated_stdio_hits():
+    root = ROOT / "build" / "recomp" / "gen"
+    print("generated-stdio-hits:")
+    if not root.is_dir():
+        print("  generated baseline missing")
+        return
+    needles = ("fopen", "fgets", "fread", "fseek", "ftell", "fclose",
+               "9162dc", "9162f0")
+    hits = 0
+    for path in sorted(root.glob("*")):
+        if not path.is_file() or path.suffix.lower() not in {".c", ".h", ".json", ".txt"}:
+            continue
+        for n, raw in enumerate(path.read_text(errors="replace").splitlines(), 1):
+            low = raw.lower()
+            if any(x in low for x in needles):
+                print(f"  {path.name}:{n}: {raw[:500]}")
+                hits += 1
+                if hits >= 80:
+                    print("  ... truncated")
+                    return
+    if hits == 0:
+        print("  none")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("listing_root", type=Path)
