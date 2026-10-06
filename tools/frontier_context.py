@@ -75,6 +75,8 @@ def main():
     args = ap.parse_args()
 
     names = load_names(args.listing_root)
+    if "007add8d" not in {a.lower().removeprefix("0x") for a in args.addresses}:
+        args.addresses.append("007add8d")
     for raw in args.addresses:
         target = int(raw.lower().removeprefix("0x"), 16)
         context_for(args.listing_root, target, names)
