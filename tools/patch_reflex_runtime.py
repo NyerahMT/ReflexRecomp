@@ -52,6 +52,28 @@ def main() -> None:
     cpu = KIT / "runtime" / "cpu.cpp"
     replace_once(
         cpu,
+        "void recomp_div_error(X86 *c, uint32_t addr) {\n"
+        "    LOGW(\"divide error at %08x (EAX=%08x EDX=%08x)\", addr, c->r[R_EAX], c->r[R_EDX]);\n"
+        "}\n",
+        "void recomp_div_error(X86 *c, uint32_t addr) {\n"
+        "    auto dump4 = [](uint32_t p) -> uint32_t { return (p && gm_valid(p, 4)) ? rd32(p) : 0u; };\n"
+        "    const uint32_t edi = c->r[R_EDI];\n"
+        "    const uint32_t ecx = c->r[R_ECX];\n"
+        "    LOGW(\"divide error at %08x (EAX=%08x EDX=%08x ECX=%08x EDI=%08x ESP=%08x)\",\n"
+        "         addr, c->r[R_EAX], c->r[R_EDX], ecx, edi, c->r[R_ESP]);\n"
+        "    if (addr == 0x00843534u || addr == 0x0084df97u || addr == 0x0088048eu) {\n"
+        "        LOGW(\"hash-div state: edi[%08x,%08x,%08x,%08x,%08x,%08x,%08x] ecx[%08x,%08x,%08x,%08x,%08x,%08x,%08x]\",\n"
+        "             dump4(edi + 0x00), dump4(edi + 0x04), dump4(edi + 0x08), dump4(edi + 0x0c),\n"
+        "             dump4(edi + 0x10), dump4(edi + 0x14), dump4(edi + 0x18),\n"
+        "             dump4(ecx + 0x00), dump4(ecx + 0x04), dump4(ecx + 0x08), dump4(ecx + 0x0c),\n"
+        "             dump4(ecx + 0x10), dump4(ecx + 0x14), dump4(ecx + 0x18));\n"
+        "    }\n"
+        "}\n",
+        "hash-div state:",
+    )
+
+    replace_once(
+        cpu,
         "    uint32_t ret = rd32(c->r[R_ESP]);\n"
         "    // Windows maps nothing in the first 64 KB, so a call there - through a nil\n",
         "    uint32_t ret = rd32(c->r[R_ESP]);\n"
