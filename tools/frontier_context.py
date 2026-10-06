@@ -92,6 +92,27 @@ def print_literal_xrefs(root: Path, literal: str, limit: int = 80):
     if count == 0:
         print("  none")
 
+
+def print_string_rows(root: Path, addresses):
+    path = root / "strings.tsv"
+    print("strings:")
+    if not path.is_file():
+        print("  strings.tsv missing")
+        return
+    needles = {a.lower().removeprefix("0x").lstrip("0") or "0" for a in addresses}
+    found = set()
+    for raw in path.read_text(errors="replace").splitlines():
+        low = raw.lower()
+        fields = re.split(r"\t+", low)
+        for field in fields[:3]:
+            token = field.strip().removeprefix("0x").lstrip("0") or "0"
+            if token in needles:
+                print("  " + raw)
+                found.add(token)
+                break
+    for needle in sorted(needles - found):
+        print(f"  0x{needle}: not-found")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("listing_root", type=Path)
@@ -99,6 +120,7 @@ def main():
     args = ap.parse_args()
 
     names = load_names(args.listing_root)
+    print_string_rows(args.listing_root, ["00952780", "0096d61c", "0096d644", "00970d84"])
     print_literal_xrefs(args.listing_root, "0x00a95960")
     for literal in ("0x952780", "0x96d61c", "0x96d644", "0x970d84"):
         print_literal_xrefs(args.listing_root, literal, 24)
