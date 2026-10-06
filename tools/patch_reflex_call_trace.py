@@ -21,8 +21,8 @@ def main():
         raise SystemExit("expected exactly one recomp_call anchor")
     trace = ANCHOR + """    if (target == 0x008244c0u) {
         const uint32_t esp = c->r[R_ESP];
-        const uint32_t ret = gm_valid(esp, 4) ? rd32(esp) : 0;
-        const uint32_t arg0 = gm_valid(esp + 4, 4) ? rd32(esp + 4) : 0;
+        const uint32_t ret = rd32(esp);
+        const uint32_t arg0 = rd32(esp + 4);
         fprintf(stderr,
                 "[recomp] reflex caller trace 008244c0: ret=%08x esp=%08x ecx=%08x "
                 "arg0=%08x eax=%08x edx=%08x esi=%08x edi=%08x\\n",
