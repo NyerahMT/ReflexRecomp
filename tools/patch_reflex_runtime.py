@@ -59,8 +59,9 @@ def main() -> None:
         "    auto dump4 = [](uint32_t p) -> uint32_t { return (p && gm_valid(p, 4)) ? rd32(p) : 0u; };\n"
         "    const uint32_t edi = c->r[R_EDI];\n"
         "    const uint32_t ecx = c->r[R_ECX];\n"
-        "    LOGW(\"divide error at %08x (EAX=%08x EDX=%08x ECX=%08x EDI=%08x ESP=%08x)\",\n"
-        "         addr, c->r[R_EAX], c->r[R_EDX], ecx, edi, c->r[R_ESP]);\n"
+        "    const uint32_t ebp = c->r[R_EBP];\n"
+        "    LOGW(\"divide error at %08x (EAX=%08x EDX=%08x ECX=%08x EDI=%08x EBP=%08x ESP=%08x)\",\n"
+        "         addr, c->r[R_EAX], c->r[R_EDX], ecx, edi, ebp, c->r[R_ESP]);\n"
         "    if (addr == 0x00843534u || addr == 0x0084df97u || addr == 0x0088048eu) {\n"
         "        LOGW(\"hash-div state: edi[%08x,%08x,%08x,%08x,%08x,%08x,%08x] ecx[%08x,%08x,%08x,%08x,%08x,%08x,%08x]\",\n"
         "             dump4(edi + 0x00), dump4(edi + 0x04), dump4(edi + 0x08), dump4(edi + 0x0c),\n"
@@ -68,8 +69,15 @@ def main() -> None:
         "             dump4(ecx + 0x00), dump4(ecx + 0x04), dump4(ecx + 0x08), dump4(ecx + 0x0c),\n"
         "             dump4(ecx + 0x10), dump4(ecx + 0x14), dump4(ecx + 0x18));\n"
         "    }\n"
+        "    if (addr == 0x0084df97u) {\n"
+        "        const uint32_t sp = c->r[R_ESP];\n"
+        "        LOGW(\"hash-grow state: new_count=%08x xmm0=%08x xmm1=%08x grow_const=%08x load_const=%08x container[%08x,%08x,%08x,%08x,%08x,%08x,%08x]\",\n"
+        "             dump4(sp + 0x18), c->xmm[0][0], c->xmm[1][0], dump4(0x009322a4u), dump4(0x00935aa8u),\n"
+        "             dump4(ebp + 0x00), dump4(ebp + 0x04), dump4(ebp + 0x08), dump4(ebp + 0x0c),\n"
+        "             dump4(ebp + 0x10), dump4(ebp + 0x14), dump4(ebp + 0x18));\n"
+        "    }\n"
         "}\n",
-        "hash-div state:",
+        "hash-grow state:",
     )
 
     replace_once(
