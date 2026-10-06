@@ -113,6 +113,23 @@ def print_string_rows(root: Path, addresses):
     for needle in sorted(needles - found):
         print(f"  0x{needle}: not-found")
 
+
+def print_stdio_metadata(root: Path):
+    terms = ("fopen", "fread", "fgets", "fseek", "ftell", "fclose", "rewind")
+    print("stdio-metadata:")
+    hits = 0
+    for path in sorted(root.glob("*.tsv")):
+        for raw in path.read_text(errors="replace").splitlines():
+            low = raw.lower()
+            if any(term in low for term in terms):
+                print(f"  {path.name}: {raw}")
+                hits += 1
+                if hits >= 80:
+                    print("  ... truncated")
+                    return
+    if hits == 0:
+        print("  none")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("listing_root", type=Path)
@@ -120,6 +137,7 @@ def main():
     args = ap.parse_args()
 
     names = load_names(args.listing_root)
+    print_stdio_metadata(args.listing_root)
     print_string_rows(args.listing_root, ["00952780", "0096d61c", "0096d644", "00970d84", "0096def0", "0096dee4", "009772a8", "00976b18", "00974650"])
     print_literal_xrefs(args.listing_root, "0x00a95960")
     for literal in ("0x952780", "0x96d61c", "0x96d644", "0x970d84"):
