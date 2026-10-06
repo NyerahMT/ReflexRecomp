@@ -74,6 +74,23 @@ def context_for(root: Path, target: int, names):
                 print(f"    {raw}")
 
 
+
+def print_literal_xrefs(root: Path, literal: str, limit: int = 80):
+    funcs = root / "functions"
+    needle = literal.lower()
+    print(f"xrefs={literal}")
+    count = 0
+    for path in sorted(funcs.glob("*.asm")):
+        for raw in path.read_text(errors="replace").splitlines():
+            if needle in raw.lower():
+                print(f"  {path.stem}: {raw}")
+                count += 1
+                if count >= limit:
+                    print(f"  ... truncated at {limit} hits")
+                    return
+    if count == 0:
+        print("  none")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("listing_root", type=Path)
@@ -81,6 +98,7 @@ def main():
     args = ap.parse_args()
 
     names = load_names(args.listing_root)
+    print_literal_xrefs(args.listing_root, "0x00a95960")
     if "007add8d" not in {a.lower().removeprefix("0x") for a in args.addresses}:
         args.addresses.append("007add8d")
     for raw in args.addresses:
