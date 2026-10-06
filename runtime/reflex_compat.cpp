@@ -8,7 +8,9 @@
 #include "memory.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
+#include <climits>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -536,11 +538,98 @@ void crt_aligned_malloc(X86 *c) {
     set_eax(c, heap_alloc(size, false, alignment));
 }
 
+void crt_aligned_realloc(X86 *c) {
+    const uint32_t old_ptr = arg(c, 0);
+    const uint32_t new_size = arg(c, 1);
+    uint32_t alignment = arg(c, 2);
+    if (alignment < 16)
+        alignment = 16;
+    if ((alignment & (alignment - 1)) != 0) {
+        set_eax(c, 0);
+        return;
+    }
+    if (!old_ptr) {
+        set_eax(c, heap_alloc(new_size, false, alignment));
+        return;
+    }
+    if (!new_size) {
+        heap_free(old_ptr);
+        set_eax(c, 0);
+        return;
+    }
+
+    const uint32_t old_size = heap_size(old_ptr);
+    if (old_size == 0xffffffffu) {
+        set_eax(c, 0);
+        return;
+    }
+
+    // heap_realloc() only guarantees the base 16-byte alignment. Allocate a
+    // new aligned block explicitly so MSVC's _aligned_realloc contract remains
+    // true even when the allocation has to move.
+    const uint32_t fresh = heap_alloc(new_size, false, alignment);
+    if (!fresh) {
+        set_eax(c, 0);
+        return;
+    }
+    const uint32_t copy = std::min(old_size, new_size);
+    if (copy)
+        std::memmove(g_mem + fresh, g_mem + old_ptr, copy);
+    heap_free(old_ptr);
+    set_eax(c, fresh);
+}
+
 void crt_aligned_free(X86 *c) {
     const uint32_t p = arg(c, 0);
     if (p)
         heap_free(p);
     set_eax(c, 0);
+}
+
+void crt_atol(X86 *c) {
+    const uint32_t src = arg(c, 0);
+    if (!src) {
+        set_eax(c, 0);
+        return;
+    }
+    const std::string text = gm_str(src, 4096);
+    errno = 0;
+    char *end = nullptr;
+    const long long value = std::strtoll(text.c_str(), &end, 10);
+    int32_t out = 0;
+    if (errno == ERANGE || value > INT32_MAX)
+        out = INT32_MAX;
+    else if (value < INT32_MIN)
+        out = INT32_MIN;
+    else
+        out = static_cast<int32_t>(value);
+    set_eax(c, static_cast<uint32_t>(out));
+}
+
+void crt_strtoul(X86 *c) {
+    const uint32_t src = arg(c, 0);
+    const uint32_t end_out = arg(c, 1);
+    const int base = static_cast<int>(arg(c, 2));
+    if (!src) {
+        if (end_out && gm_valid(end_out, 4))
+            wr32(end_out, 0);
+        set_eax(c, 0);
+        return;
+    }
+
+    const std::string text = gm_str(src, 4096);
+    errno = 0;
+    char *end = nullptr;
+    const unsigned long long value = std::strtoull(text.c_str(), &end, base);
+    const size_t consumed =
+        end && end >= text.c_str() ? static_cast<size_t>(end - text.c_str()) : 0;
+    if (end_out && gm_valid(end_out, 4))
+        wr32(end_out, src + static_cast<uint32_t>(std::min(consumed, text.size())));
+
+    const uint32_t out =
+        (errno == ERANGE || value > UINT32_MAX) ? UINT32_MAX
+                                                : static_cast<uint32_t>(value);
+    set_eax(c, out);
 }
 
 void crt_pointer_identity(X86 *c) {
@@ -1301,7 +1390,10 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "islower", ARGC_CDECL, crt_islower},
     {"MSVCR90.dll", "isupper", ARGC_CDECL, crt_isupper},
     {"MSVCR90.dll", "ispunct", ARGC_CDECL, crt_ispunct},
+    {"MSVCR90.dll", "atol", ARGC_CDECL, crt_atol},
+    {"MSVCR90.dll", "strtoul", ARGC_CDECL, crt_strtoul},
     {"MSVCR90.dll", "_aligned_malloc", ARGC_CDECL, crt_aligned_malloc},
+    {"MSVCR90.dll", "_aligned_realloc", ARGC_CDECL, crt_aligned_realloc},
     {"MSVCR90.dll", "_aligned_free", ARGC_CDECL, crt_aligned_free},
     {"MSVCR90.dll", "_encode_pointer", ARGC_CDECL, crt_pointer_identity},
     {"MSVCR90.dll", "_decode_pointer", ARGC_CDECL, crt_pointer_identity},
