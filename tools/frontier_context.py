@@ -67,6 +67,12 @@ def context_for(root: Path, target: int, names):
         mark = ">" if i == nearest else " "
         print(f"  {mark} {rows[i][1]}")
 
+    if start == 0x007adc60:
+        print("  field refs for [ESI + 0x30]:")
+        for _, raw in rows:
+            if "[ESI + 0x30]" in raw:
+                print(f"    {raw}")
+
 
 def main():
     ap = argparse.ArgumentParser()
