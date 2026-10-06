@@ -497,6 +497,33 @@ void crt_tolower(X86 *c) {
         set_eax(c, static_cast<uint32_t>(v));
 }
 
+void crt_toupper(X86 *c) {
+    const int32_t v = static_cast<int32_t>(arg(c, 0));
+    if (v >= 0 && v <= 255)
+        set_eax(c, static_cast<uint32_t>(std::toupper(static_cast<unsigned char>(v))));
+    else
+        set_eax(c, static_cast<uint32_t>(v));
+}
+
+template <int (*Pred)(int)>
+void crt_ctype_predicate(X86 *c) {
+    const int32_t v = static_cast<int32_t>(arg(c, 0));
+    if (v < 0 || v > 255) {
+        set_eax(c, 0);
+        return;
+    }
+    set_eax(c, Pred(static_cast<unsigned char>(v)) ? 1u : 0u);
+}
+
+void crt_isdigit(X86 *c) { crt_ctype_predicate<std::isdigit>(c); }
+void crt_isalpha(X86 *c) { crt_ctype_predicate<std::isalpha>(c); }
+void crt_isalnum(X86 *c) { crt_ctype_predicate<std::isalnum>(c); }
+void crt_isspace(X86 *c) { crt_ctype_predicate<std::isspace>(c); }
+void crt_isxdigit(X86 *c) { crt_ctype_predicate<std::isxdigit>(c); }
+void crt_islower(X86 *c) { crt_ctype_predicate<std::islower>(c); }
+void crt_isupper(X86 *c) { crt_ctype_predicate<std::isupper>(c); }
+void crt_ispunct(X86 *c) { crt_ctype_predicate<std::ispunct>(c); }
+
 void crt_aligned_malloc(X86 *c) {
     const uint32_t size = arg(c, 0);
     uint32_t alignment = arg(c, 1);
@@ -1265,6 +1292,15 @@ const ImportShim k_reflex_shims[] = {
      "?_name_internal_method@type_info@@QBEPBDPAU__type_info_node@@@Z",
      1, crt_type_info_name_internal},
     {"MSVCR90.dll", "tolower", ARGC_CDECL, crt_tolower},
+    {"MSVCR90.dll", "toupper", ARGC_CDECL, crt_toupper},
+    {"MSVCR90.dll", "isdigit", ARGC_CDECL, crt_isdigit},
+    {"MSVCR90.dll", "isalpha", ARGC_CDECL, crt_isalpha},
+    {"MSVCR90.dll", "isalnum", ARGC_CDECL, crt_isalnum},
+    {"MSVCR90.dll", "isspace", ARGC_CDECL, crt_isspace},
+    {"MSVCR90.dll", "isxdigit", ARGC_CDECL, crt_isxdigit},
+    {"MSVCR90.dll", "islower", ARGC_CDECL, crt_islower},
+    {"MSVCR90.dll", "isupper", ARGC_CDECL, crt_isupper},
+    {"MSVCR90.dll", "ispunct", ARGC_CDECL, crt_ispunct},
     {"MSVCR90.dll", "_aligned_malloc", ARGC_CDECL, crt_aligned_malloc},
     {"MSVCR90.dll", "_aligned_free", ARGC_CDECL, crt_aligned_free},
     {"MSVCR90.dll", "_encode_pointer", ARGC_CDECL, crt_pointer_identity},
