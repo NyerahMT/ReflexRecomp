@@ -6,6 +6,8 @@ import argparse
 import csv
 import re
 
+ROOT = Path(__file__).resolve().parents[1]
+
 LINE_RE = re.compile(r"^([0-9A-Fa-f]{8})\s{2}(.*)$")
 
 
