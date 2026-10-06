@@ -237,6 +237,7 @@ def main():
     print_callers(args.listing_root, "0x008434f0", 40)
     print_callers(args.listing_root, "0x0084df50", 40)
     print_callers(args.listing_root, "0x00880470", 40)
+    print_callers(args.listing_root, "0x0087bd40", 40)
     print_callers(args.listing_root, "0x005c3380", 40)
     print_stdio_metadata(args.listing_root)
     print_string_rows(args.listing_root, ["00952780", "0096d61c", "0096d644", "00970d84", "0096def0", "0096dee4", "009772a8", "00976b18", "00974650"])
@@ -280,6 +281,7 @@ def main():
         "00843546", "0084357d", "00843584", "008435a0", "008435c0",
         "008804a8", "008804d0", "008804f4", "00880510",
         "005c3380",
+        "0087bc80", "0087bcf0", "0087bd00", "0087bd40", "0087be00", "0087be80",
     }
     present = {a.lower().removeprefix("0x") for a in args.addresses}
     for address in sorted(required - present):
