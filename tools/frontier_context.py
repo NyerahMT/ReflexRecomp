@@ -61,8 +61,8 @@ def context_for(root: Path, target: int, names):
     print(f"  function=0x{start:08x} {names.get(start, '')}".rstrip())
 
     nearest = min(range(len(rows)), key=lambda i: abs(rows[i][0] - target))
-    lo = max(0, nearest - 5)
-    hi = min(len(rows), nearest + 5)
+    lo = max(0, nearest - 16)
+    hi = min(len(rows), nearest + 10)
     for i in range(lo, hi):
         mark = ">" if i == nearest else " "
         print(f"  {mark} {rows[i][1]}")
