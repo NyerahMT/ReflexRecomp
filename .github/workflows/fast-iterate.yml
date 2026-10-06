@@ -17,6 +17,7 @@ on:
       - "tools/patch_reflex_interp.py"
       - "tools/refresh_cached_function.py"
       - "tools/patch_reflex_seh.py"
+      - "tools/patch_reflex_call_trace.py"
       - ".github/workflows/fast-iterate.yml"
 
 permissions:
