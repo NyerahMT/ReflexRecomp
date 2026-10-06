@@ -99,6 +99,16 @@ def main():
 
     names = load_names(args.listing_root)
     print_literal_xrefs(args.listing_root, "0x00a95960")
+    print("writes=0x00a95960")
+    write_count = 0
+    for path in sorted((args.listing_root / "functions").glob("*.asm")):
+        for raw in path.read_text(errors="replace").splitlines():
+            low = raw.lower()
+            if "[0x00a95960]" in low and re.search(r"\bmov\s+(?:dword ptr\s+)?\[0x00a95960\]\s*,", low):
+                print(f"  {path.stem}: {raw}")
+                write_count += 1
+    if write_count == 0:
+        print("  none")
     if "007add8d" not in {a.lower().removeprefix("0x") for a in args.addresses}:
         args.addresses.append("007add8d")
     for raw in args.addresses:
