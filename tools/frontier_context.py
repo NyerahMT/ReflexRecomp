@@ -120,7 +120,7 @@ def main():
     args = ap.parse_args()
 
     names = load_names(args.listing_root)
-    print_string_rows(args.listing_root, ["00952780", "0096d61c", "0096d644", "00970d84"])
+    print_string_rows(args.listing_root, ["00952780", "0096d61c", "0096d644", "00970d84", "0096def0", "0096dee4", "009772a8", "00976b18", "00974650"])
     print_literal_xrefs(args.listing_root, "0x00a95960")
     for literal in ("0x952780", "0x96d61c", "0x96d644", "0x970d84"):
         print_literal_xrefs(args.listing_root, literal, 24)
