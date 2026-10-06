@@ -224,6 +224,23 @@ def print_function_strings(root: Path, functions):
     if hits == 0:
         print("  none")
 
+def print_metadata_matches(root: Path, addresses):
+    print("metadata-address-hits:")
+    needles = tuple(a.lower().removeprefix("0x") for a in addresses)
+    hits = 0
+    for path in sorted(root.glob("*.tsv")):
+        for raw in path.read_text(errors="replace").splitlines():
+            low = raw.lower().replace("0x", "")
+            if any(n in low for n in needles):
+                print(f"  {path.name}: {raw}")
+                hits += 1
+                if hits >= 100:
+                    print("  ... truncated")
+                    return
+    if hits == 0:
+        print("  none")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("listing_root", type=Path)
@@ -243,6 +260,7 @@ def main():
     print_callers(args.listing_root, "0x0087bbd0", 40)
     print_callers(args.listing_root, "0x005ebd00", 40)
     print_stdio_metadata(args.listing_root)
+    print_metadata_matches(args.listing_root, ["009322a0", "009322a4", "009322a8"])
     print_string_rows(args.listing_root, ["00952780", "0096d61c", "0096d644", "00970d84", "0096def0", "0096dee4", "009772a8", "00976b18", "00974650"])
     print_function_strings(args.listing_root, ["007562b0", "007564f0", "00756e10"])
     print_literal_xrefs(args.listing_root, "0x00a95960")
