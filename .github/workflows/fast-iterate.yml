@@ -161,25 +161,41 @@ jobs:
           rm -rf "$fresh"
           mkdir -p "$fresh"
 
+          refresh=(
+            008434f0
+            0084df50
+            00880470
+            00903a60
+            00904300
+            0090da70
+            0090dac0
+            0090dcf0
+            0090ddf0
+            "$REFLEX_FRONTIER_FN"
+          )
+
           .venv/bin/python kit/tools/recomp/translate.py \
             --game "$GITHUB_WORKSPACE" \
             --out "$fresh" \
-            --only 00903a60 00904300 0090da70 0090dac0 0090dcf0 0090ddf0 "$REFLEX_FRONTIER_FN" \
+            --only "${refresh[@]}" \
             --allow-table-gaps "Targeted fast refresh uses the established Reflex recovery policy" \
             --allow-unmodelled "Targeted fast refresh keeps the established Reflex unresolved-path policy"
 
-          for addr in 00903a60 00904300 0090da70 0090dac0 0090dcf0 0090ddf0 "$REFLEX_FRONTIER_FN"; do
+          for addr in "${refresh[@]}"; do
             python3 tools/refresh_cached_function.py \
               --cached build/recomp/gen \
               --fresh "$fresh" \
               --address "$addr"
           done
 
+          echo "Fresh hash-growth translation references:"
+          grep -R -n -A24 -B4 '008434f0' "$fresh" | head -n 160 || true
+
           if grep -Rqs -E 'recomp_unmodelled\(c, 0x(00903a7c|0090431c|0090daa3|0090daf3|0090dd27|0090de25)u\)' build/recomp/gen; then
             echo "::error::Reflex SSE refresh still contains a reached/adjacent UNPCKLPS trap"
             exit 1
           fi
-          echo "Refreshed private cached translations for all currently reached/adjacent packed-single SSE initializers."
+          echo "Refreshed private cached translations for packed-single SSE initializers and the active hash-growth frontier."
 
       - name: Instrument current Registry caller frontier
         run: python3 tools/patch_reflex_call_trace.py
