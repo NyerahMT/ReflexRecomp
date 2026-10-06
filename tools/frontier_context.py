@@ -243,11 +243,18 @@ def print_metadata_matches(root: Path, addresses):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--quick", action="store_true", help="only print context for the requested addresses")
     ap.add_argument("listing_root", type=Path)
     ap.add_argument("addresses", nargs="+")
     args = ap.parse_args()
 
     names = load_names(args.listing_root)
+    if args.quick:
+        for raw in args.addresses:
+            target = int(raw.lower().removeprefix("0x"), 16)
+            context_for(args.listing_root, target, names)
+        return
+
     print_symbol_hits()
     print_generated_stdio_hits()
     print_callers(args.listing_root, "0x008104d0", 24)
