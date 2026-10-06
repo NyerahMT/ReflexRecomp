@@ -415,6 +415,31 @@ void crt_snprintf(X86 *c) {
     set_eax(c, static_cast<uint32_t>(res.size()));
 }
 
+void crt_vsnprintf(X86 *c) {
+    const uint32_t dst = arg(c, 0);
+    const uint32_t cap = arg(c, 1);
+    const uint32_t fmt = arg(c, 2);
+    const uint32_t va = arg(c, 3);
+    const std::string res = guest_printf_format(fmt, va);
+
+    if (!cap) {
+        set_eax(c, res.empty() ? 0u : static_cast<uint32_t>(-1));
+        return;
+    }
+    if (!dst || !gm_valid(dst, cap)) {
+        set_eax(c, static_cast<uint32_t>(-1));
+        return;
+    }
+    if (res.size() >= cap) {
+        memcpy(g_mem + dst, res.data(), cap);
+        set_eax(c, static_cast<uint32_t>(-1));
+        return;
+    }
+    memcpy(g_mem + dst, res.data(), res.size());
+    g_mem[dst + res.size()] = 0;
+    set_eax(c, static_cast<uint32_t>(res.size()));
+}
+
 void crt_sprintf(X86 *c) {
     const uint32_t dst = arg(c, 0);
     const uint32_t fmt = arg(c, 1);
@@ -619,6 +644,33 @@ void msvcp_string_ctor_cstr(X86 *c) {
     set_eax(c, self);
 }
 
+int msvcp_string_compare(uint32_t left, uint32_t right) {
+    if (!left || !right || !gm_valid(left, 24) || !gm_valid(right, 24))
+        return 0;
+
+    const uint32_t left_size = rd32(left + 16);
+    const uint32_t right_size = rd32(right + 16);
+    const uint32_t left_data = msvcp_string_data(left);
+    const uint32_t right_data = msvcp_string_data(right);
+    if ((left_size && (!left_data || !gm_valid(left_data, left_size))) ||
+        (right_size && (!right_data || !gm_valid(right_data, right_size))))
+        return 0;
+
+    const uint32_t common = left_size < right_size ? left_size : right_size;
+    if (common) {
+        const int rc = memcmp(g_mem + left_data, g_mem + right_data, common);
+        if (rc < 0)
+            return -1;
+        if (rc > 0)
+            return 1;
+    }
+    return left_size < right_size ? -1 : (left_size > right_size ? 1 : 0);
+}
+
+void msvcp_string_less(X86 *c) {
+    set_eax(c, msvcp_string_compare(arg(c, 0), arg(c, 1)) < 0 ? 1u : 0u);
+}
+
 void msvcp_string_dtor(X86 *c) {
     const uint32_t self = c->r[R_ECX];
     if (self && gm_valid(self, 24)) {
@@ -693,6 +745,7 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "__getmainargs", ARGC_CDECL, crt_getmainargs},
     {"MSVCR90.dll", "__iob_func", ARGC_CDECL, crt_iob_func},
     {"MSVCR90.dll", "_snprintf", ARGC_CDECL, crt_snprintf},
+    {"MSVCR90.dll", "_vsnprintf", ARGC_CDECL, crt_vsnprintf},
     {"MSVCR90.dll", "sprintf", ARGC_CDECL, crt_sprintf},
     {"MSVCR90.dll", "memmove_s", ARGC_CDECL, crt_memmove_s},
     {"MSVCR90.dll", "mbstowcs_s", ARGC_CDECL, crt_mbstowcs_s},
@@ -739,6 +792,9 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCP90.dll",
      "??1?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAE@XZ",
      0, msvcp_string_dtor},
+    {"MSVCP90.dll",
+     "??$?MDU?$char_traits@D@std@@V?$allocator@D@1@@std@@YA_NABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@0@0@Z",
+     ARGC_CDECL, msvcp_string_less},
 };
 
 } // namespace
