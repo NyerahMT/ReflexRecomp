@@ -1298,13 +1298,19 @@ void crt_initterm(X86 *c) {
     const uint32_t first = arg(c, 0);
     const uint32_t last = arg(c, 1);
     if (last < first || ((last - first) & 3u) || !gm_valid(first, last - first)) {
+        fprintf(stderr, "[recomp] _initterm invalid range %08x..%08x\\n", first, last);
         set_eax(c, 0);
         return;
     }
-    for (uint32_t p = first; p < last; p += 4) {
+    fprintf(stderr, "[recomp] _initterm range %08x..%08x entries=%u\\n",
+            first, last, (last - first) / 4);
+    uint32_t index = 0;
+    for (uint32_t p = first; p < last; p += 4, ++index) {
         const uint32_t fn = rd32(p);
-        if (fn)
+        if (fn) {
+            fprintf(stderr, "[recomp] _initterm[%u] -> %08x\\n", index, fn);
             guest_call(c, fn);
+        }
     }
     set_eax(c, 0);
 }
@@ -1313,13 +1319,18 @@ void crt_initterm_e(X86 *c) {
     const uint32_t first = arg(c, 0);
     const uint32_t last = arg(c, 1);
     if (last < first || ((last - first) & 3u) || !gm_valid(first, last - first)) {
+        fprintf(stderr, "[recomp] _initterm_e invalid range %08x..%08x\\n", first, last);
         set_eax(c, static_cast<uint32_t>(-1));
         return;
     }
-    for (uint32_t p = first; p < last; p += 4) {
+    fprintf(stderr, "[recomp] _initterm_e range %08x..%08x entries=%u\\n",
+            first, last, (last - first) / 4);
+    uint32_t index = 0;
+    for (uint32_t p = first; p < last; p += 4, ++index) {
         const uint32_t fn = rd32(p);
         if (!fn)
             continue;
+        fprintf(stderr, "[recomp] _initterm_e[%u] -> %08x\\n", index, fn);
         const uint32_t rc = guest_call(c, fn);
         if (rc) {
             set_eax(c, rc);
