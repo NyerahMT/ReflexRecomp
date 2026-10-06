@@ -141,6 +141,19 @@ jobs:
       - name: Link private game input
         run: .venv/bin/python tools/setup.py --install "$REFLEX_GAME_ROOT" --link-only
 
+      - name: Resolve current null-call frontier
+        run: |
+          set -euo pipefail
+          asm_root="analysis/decompiled/MXReflex.exe/functions"
+          hit="$(grep -l -i -m1 '^008244e8  ' "$asm_root"/*.asm | head -n 1 || true)"
+          if [[ -z "$hit" ]]; then
+            echo "::error::Could not map runtime return address 0x008244E8 into the private Reflex listing"
+            exit 1
+          fi
+          frontier_fn="$(basename "$hit" .asm)"
+          echo "REFLEX_FRONTIER_FN=$frontier_fn" >> "$GITHUB_ENV"
+          echo "Mapped runtime return 0x008244E8 to private function $frontier_fn"
+
       - name: Refresh reached SSE functions from private listing
         run: |
           set -euo pipefail
@@ -151,11 +164,11 @@ jobs:
           .venv/bin/python kit/tools/recomp/translate.py \
             --game "$GITHUB_WORKSPACE" \
             --out "$fresh" \
-            --only 00903a60 00904300 0090da70 0090dac0 0090dcf0 0090ddf0 \
+            --only 00903a60 00904300 0090da70 0090dac0 0090dcf0 0090ddf0 "$REFLEX_FRONTIER_FN" \
             --allow-table-gaps "Targeted fast refresh uses the established Reflex recovery policy" \
             --allow-unmodelled "Targeted fast refresh keeps the established Reflex unresolved-path policy"
 
-          for addr in 00903a60 00904300 0090da70 0090dac0 0090dcf0 0090ddf0; do
+          for addr in 00903a60 00904300 0090da70 0090dac0 0090dcf0 0090ddf0 "$REFLEX_FRONTIER_FN"; do
             python3 tools/refresh_cached_function.py \
               --cached build/recomp/gen \
               --fresh "$fresh" \
@@ -192,6 +205,8 @@ jobs:
           xvfb-run -a -s "-screen 0 1280x720x24" \
             timeout --signal=TERM --kill-after=5s 30s \
             env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
+                RECOMP_LOG=2 \
+                RECOMP_WATCH_FRAME=1 \
                 SDL_AUDIODRIVER=dummy \
                 "$app" \
             2>&1 | tee build/logs/runtime.log
