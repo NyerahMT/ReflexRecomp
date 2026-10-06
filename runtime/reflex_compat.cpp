@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -46,6 +47,17 @@ void reflex_steam_init(X86 *c) {
     // Permit offline/local startup. Individual Steam interfaces can be added
     // as the game reaches them.
     set_eax(c, 1);
+}
+
+void reflex_steam_register_callback(X86 *c) {
+    // Offline bring-up has no Steam callback pump. This export is cdecl; the
+    // no-op exists primarily so the import dispatcher preserves the ABI.
+    set_eax(c, 0);
+}
+
+void reflex_steam_user_stats(X86 *c) {
+    // No Steam backend is attached to the recompiled process yet.
+    set_eax(c, 0);
 }
 
 void crt_memcpy(X86 *c) {
@@ -120,6 +132,98 @@ void crt_strcmp(X86 *c) {
 
 void crt_strlen(X86 *c) {
     set_eax(c, static_cast<uint32_t>(gm_str(arg(c, 0)).size()));
+}
+
+void crt_strstr(X86 *c) {
+    const uint32_t hay_ptr = arg(c, 0);
+    const uint32_t needle_ptr = arg(c, 1);
+    if (!hay_ptr || !needle_ptr) {
+        set_eax(c, 0);
+        return;
+    }
+    const std::string hay = gm_str(hay_ptr, 0x100000);
+    const std::string needle = gm_str(needle_ptr, 0x100000);
+    const size_t pos = hay.find(needle);
+    set_eax(c, pos == std::string::npos ? 0u : hay_ptr + static_cast<uint32_t>(pos));
+}
+
+void crt_strncat(X86 *c) {
+    const uint32_t dst = arg(c, 0);
+    const uint32_t src = arg(c, 1);
+    const uint32_t count = arg(c, 2);
+    if (!dst || !src) {
+        set_eax(c, dst);
+        return;
+    }
+
+    const std::string current = gm_str(dst, 0x100000);
+    const std::string source = gm_str(src, 0x100000);
+    const uint32_t append =
+        static_cast<uint32_t>(std::min<size_t>(source.size(), count));
+    const uint64_t end64 = uint64_t(dst) + current.size();
+    if (end64 > 0xffffffffu) {
+        set_eax(c, dst);
+        return;
+    }
+    const uint32_t end = static_cast<uint32_t>(end64);
+    if (!gm_valid(end, append + 1u)) {
+        set_eax(c, dst);
+        return;
+    }
+    if (append)
+        memcpy(g_mem + end, source.data(), append);
+    g_mem[end + append] = 0;
+    set_eax(c, dst);
+}
+
+void crt_strpbrk(X86 *c) {
+    const uint32_t src = arg(c, 0);
+    const uint32_t accept = arg(c, 1);
+    if (!src || !accept) {
+        set_eax(c, 0);
+        return;
+    }
+    const std::string chars = gm_str(accept, 0x100000);
+    for (uint32_t i = 0; i < 0x100000u && gm_valid(src + i, 1); ++i) {
+        const char ch = static_cast<char>(g_mem[src + i]);
+        if (!ch)
+            break;
+        if (chars.find(ch) != std::string::npos) {
+            set_eax(c, src + i);
+            return;
+        }
+    }
+    set_eax(c, 0);
+}
+
+void crt_fopen_unavailable(X86 *c) {
+    // File I/O is not required for the current boot probe, but a real handler
+    // is used so the cdecl signature overrides any generic logging stub.
+    set_eax(c, 0);
+}
+
+void crt_cipow(X86 *c) {
+    // MSVC's _CIpow is cdecl with a compiler-known x87 convention:
+    // ST(0)=exponent, ST(1)=base, and it consumes both values leaving x^y.
+    const uint32_t y_slot = c->fpu_top & 7u;
+    const uint32_t x_slot = (c->fpu_top + 1u) & 7u;
+    const uint16_t y_tag = (c->fpu_tag >> (2u * y_slot)) & 3u;
+    const uint16_t x_tag = (c->fpu_tag >> (2u * x_slot)) & 3u;
+    if (y_tag == 3u || x_tag == 3u) {
+        set_eax(c, 0);
+        return;
+    }
+
+    const double result = std::pow(c->st[x_slot], c->st[y_slot]);
+    c->fpu_tag |= static_cast<uint16_t>(3u << (2u * y_slot));
+    c->fpu_top = (c->fpu_top + 1u) & 7u;
+    c->st[x_slot] = result;
+    c->st_bits[x_slot] = 0;
+    c->st_exact[x_slot] = 0;
+    c->fpu_tag &= static_cast<uint16_t>(~(3u << (2u * x_slot)));
+    c->fpu_sw =
+        static_cast<uint16_t>((c->fpu_sw & ~0x3800u) | ((c->fpu_top & 7u) << 11));
+    set_eax(c, 0);
 }
 
 void crt_strchr(X86 *c) {
@@ -205,6 +309,46 @@ void crt_noop(X86 *c) {
 void crt_srand(X86 *c) {
     std::srand(arg(c, 0));
     set_eax(c, 0);
+}
+
+void d3dx_compile_shader_unavailable(X86 *c) {
+    // D3DXCompileShader is stdcall with ten stack arguments. Report E_FAIL
+    // and clear every output instead of returning S_OK with null garbage.
+    for (uint32_t i = 7; i <= 9; ++i) {
+        const uint32_t out = arg(c, i);
+        if (out && gm_valid(out, 4))
+            wr32(out, 0);
+    }
+    set_eax(c, 0x80004005u); // E_FAIL
+}
+
+void fmod_ok(X86 *c) {
+    set_eax(c, 0); // FMOD_OK
+}
+
+void fmod_fail(X86 *c) {
+    set_eax(c, 1); // any nonzero FMOD_RESULT is failure
+}
+
+void fmod_event_system_create_unavailable(X86 *c) {
+    const uint32_t out = arg(c, 0);
+    if (out && gm_valid(out, 4))
+        wr32(out, 0);
+    set_eax(c, 1);
+}
+
+void fmod_fail_out_ptr(X86 *c) {
+    const uint32_t out = arg(c, 1); // __stdcall member: [this, out]
+    if (out && gm_valid(out, 4))
+        wr32(out, 0);
+    set_eax(c, 1);
+}
+
+void fmod_fail_version(X86 *c) {
+    const uint32_t out = arg(c, 1); // __stdcall member: [this, version*]
+    if (out && gm_valid(out, 4))
+        wr32(out, 0);
+    set_eax(c, 1);
 }
 
 uint32_t guest_scalar(uint32_t &slot, uint32_t initial) {
@@ -860,6 +1004,9 @@ const ImportShim k_reflex_shims[] = {
     {"steam_api.dll", "SteamAPI_RestartAppIfNecessary", ARGC_CDECL,
      reflex_steam_restart_app_if_necessary},
     {"steam_api.dll", "SteamAPI_Init", ARGC_CDECL, reflex_steam_init},
+    {"steam_api.dll", "SteamAPI_RegisterCallback", ARGC_CDECL,
+     reflex_steam_register_callback},
+    {"steam_api.dll", "SteamUserStats", ARGC_CDECL, reflex_steam_user_stats},
 
     // Visual C++ 2008 CRT. Explicit cdecl registration is important even for
     // logging-only entries: it prevents the import dispatcher from treating
@@ -890,6 +1037,9 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "_stricmp", ARGC_CDECL, crt_stricmp},
     {"MSVCR90.dll", "strcmp", ARGC_CDECL, crt_strcmp},
     {"MSVCR90.dll", "strlen", ARGC_CDECL, crt_strlen},
+    {"MSVCR90.dll", "strstr", ARGC_CDECL, crt_strstr},
+    {"MSVCR90.dll", "strncat", ARGC_CDECL, crt_strncat},
+    {"MSVCR90.dll", "strpbrk", ARGC_CDECL, crt_strpbrk},
     {"MSVCR90.dll", "strchr", ARGC_CDECL, crt_strchr},
     {"MSVCR90.dll", "_invalid_parameter_noinfo", ARGC_CDECL,
      crt_invalid_parameter_noinfo},
@@ -904,12 +1054,39 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "_lock", ARGC_CDECL, crt_noop},
     {"MSVCR90.dll", "_unlock", ARGC_CDECL, crt_noop},
     {"MSVCR90.dll", "srand", ARGC_CDECL, crt_srand},
+    {"MSVCR90.dll", "_CIpow", ARGC_CDECL, crt_cipow},
 
     // Signature-only for the first pass. Returning zero is preferable to
     // inventing FILE/SEH/onexit semantics, while the cdecl ABI remains correct.
-    {"MSVCR90.dll", "fopen", ARGC_CDECL, nullptr},
+    {"MSVCR90.dll", "fopen", ARGC_CDECL, crt_fopen_unavailable},
     {"MSVCR90.dll", "__dllonexit", ARGC_CDECL, crt_onexit},
     {"MSVCR90.dll", "_except_handler4_common", ARGC_CDECL, crt_exception_continue_search},
+
+    // Reached external middleware imports. Model the ABI and fail explicitly
+    // when the host does not yet provide the underlying service.
+    {"d3dx9_43.dll", "D3DXCompileShader", 10, d3dx_compile_shader_unavailable},
+    {"fmodexL.dll", "FMOD_Debug_SetLevel", 1, fmod_ok},
+    {"fmodexL.dll", "FMOD_Memory_Initialize", 5, fmod_ok},
+    {"fmod_eventL.dll", "_FMOD_EventSystem_Create@4", 1,
+     fmod_event_system_create_unavailable},
+    {"fmodexL.dll",
+     "?setSoftwareChannels@System@FMOD@@QAG?AW4FMOD_RESULT@@H@Z",
+     2, fmod_fail},
+    {"fmodexL.dll",
+     "?setAdvancedSettings@System@FMOD@@QAG?AW4FMOD_RESULT@@PAUFMOD_ADVANCEDSETTINGS@@@Z",
+     2, fmod_fail},
+    {"fmodexL.dll",
+     "?set3DSettings@System@FMOD@@QAG?AW4FMOD_RESULT@@MMM@Z",
+     4, fmod_fail},
+    {"fmodexL.dll",
+     "?getMasterChannelGroup@System@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVChannelGroup@2@@Z",
+     2, fmod_fail_out_ptr},
+    {"fmodexL.dll",
+     "?getMasterSoundGroup@System@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVSoundGroup@2@@Z",
+     2, fmod_fail_out_ptr},
+    {"fmodexL.dll",
+     "?getVersion@System@FMOD@@QAG?AW4FMOD_RESULT@@PAI@Z",
+     2, fmod_fail_version},
 
     // MSVC thiscall: ECX carries this; one explicit constructor argument is
     // callee-cleaned, while the destructor has no stack arguments.
