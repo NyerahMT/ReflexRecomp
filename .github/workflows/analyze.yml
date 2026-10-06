@@ -2,6 +2,13 @@ name: Analyze + Translate Reflex
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "game.toml"
+      - "tools/analyze.py"
+      - ".github/workflows/analyze.yml"
 
 permissions:
   contents: read
