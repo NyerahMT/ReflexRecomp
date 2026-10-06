@@ -62,7 +62,8 @@ def context_for(root: Path, target: int, names):
 
     nearest = min(range(len(rows)), key=lambda i: abs(rows[i][0] - target))
     lo = max(0, nearest - 16)
-    hi = min(len(rows), nearest + 10)
+    forward = 64 if target == start and start in {0x007b56d0, 0x007b6680, 0x00756e10} else 10
+    hi = min(len(rows), nearest + forward)
     for i in range(lo, hi):
         mark = ">" if i == nearest else " "
         print(f"  {mark} {rows[i][1]}")
