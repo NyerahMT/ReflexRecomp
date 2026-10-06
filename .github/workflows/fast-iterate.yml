@@ -151,18 +151,18 @@ jobs:
           .venv/bin/python kit/tools/recomp/translate.py \
             --game "$GITHUB_WORKSPACE" \
             --out "$fresh" \
-            --only 00903a60 00904300 0090da70 0090dac0 0090dcf0 \
+            --only 00903a60 00904300 0090da70 0090dac0 0090dcf0 0090ddf0 \
             --allow-table-gaps "Targeted fast refresh uses the established Reflex recovery policy" \
             --allow-unmodelled "Targeted fast refresh keeps the established Reflex unresolved-path policy"
 
-          for addr in 00903a60 00904300 0090da70 0090dac0 0090dcf0; do
+          for addr in 00903a60 00904300 0090da70 0090dac0 0090dcf0 0090ddf0; do
             python3 tools/refresh_cached_function.py \
               --cached build/recomp/gen \
               --fresh "$fresh" \
               --address "$addr"
           done
 
-          if grep -Rqs -E 'recomp_unmodelled\(c, 0x(00903a7c|0090431c|0090daa3|0090daf3|0090dd27)u\)' build/recomp/gen; then
+          if grep -Rqs -E 'recomp_unmodelled\(c, 0x(00903a7c|0090431c|0090daa3|0090daf3|0090dd27|0090de25)u\)' build/recomp/gen; then
             echo "::error::Reflex SSE refresh still contains a reached/adjacent UNPCKLPS trap"
             exit 1
           fi
