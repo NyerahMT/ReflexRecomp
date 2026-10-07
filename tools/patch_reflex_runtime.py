@@ -110,6 +110,121 @@ def main() -> None:
         "reflex frontier 008244e8:",
     )
 
+    kernel32 = KIT / "runtime" / "kernel32.cpp"
+    replace_once(
+        kernel32,
+        "void create_event_named(X86 *c, const std::string &name) {\n"
+        "    if (reuse_named_object(c, name, H_EVENT))\n"
+        "        return;\n"
+        "    uint32_t h = handle_new(H_EVENT);\n"
+        "    handles()[h].manual_reset = arg(c, 1) != 0;\n"
+        "    handles()[h].signalled = arg(c, 2) != 0;\n"
+        "    handles()[h].object_name = name;\n"
+        "    set_last_error(ERROR_SUCCESS_);\n"
+        "    set_eax(c, h);\n"
+        "}\n",
+        "void create_event_named(X86 *c, const std::string &name) {\n"
+        "    const bool reflex_fmod_event = name == \"FMODQueueProcessEvent\";\n"
+        "    if (reuse_named_object(c, name, H_EVENT)) {\n"
+        "        if (reflex_fmod_event)\n"
+        "            fprintf(stderr, \"[reflex-sync] CreateEventA reuse name=%s result=%08x last_error=%u\\n\",\n"
+        "                    name.c_str(), c->r[R_EAX], get_last_error());\n"
+        "        return;\n"
+        "    }\n"
+        "    uint32_t h = handle_new(H_EVENT);\n"
+        "    handles()[h].manual_reset = arg(c, 1) != 0;\n"
+        "    handles()[h].signalled = arg(c, 2) != 0;\n"
+        "    handles()[h].object_name = name;\n"
+        "    set_last_error(ERROR_SUCCESS_);\n"
+        "    set_eax(c, h);\n"
+        "    if (reflex_fmod_event)\n"
+        "        fprintf(stderr, \"[reflex-sync] CreateEventA name=%s handle=%08x manual=%u initial=%u handles=%zu\\n\",\n"
+        "                name.c_str(), h, handles()[h].manual_reset ? 1u : 0u,\n"
+        "                handles()[h].signalled ? 1u : 0u, handles().size());\n"
+        "}\n",
+        "[reflex-sync] CreateEventA",
+    )
+
+    replace_once(
+        kernel32,
+        "void k_SetEvent(X86 *c) {\n"
+        "    HObj *o = handle_get(arg(c, 0), H_EVENT);\n"
+        "    if (o) {\n"
+        "        o->signalled = true;\n"
+        "        sched_wake_all();\n"
+        "    }\n"
+        "    set_eax(c, o ? 1 : 0);\n"
+        "}\n",
+        "void k_SetEvent(X86 *c) {\n"
+        "    const uint32_t h = arg(c, 0);\n"
+        "    HObj *o = handle_get(h, H_EVENT);\n"
+        "    const uint32_t reflex_h = gm_valid(0x00d67ce8u, 4) ? rd32(0x00d67ce8u) : 0u;\n"
+        "    const bool trace = h == reflex_h || (o && o->object_name == \"FMODQueueProcessEvent\");\n"
+        "    if (trace)\n"
+        "        fprintf(stderr, \"[reflex-sync] SetEvent handle=%08x guest_global=%08x valid=%u signalled_before=%u\\n\",\n"
+        "                h, reflex_h, o ? 1u : 0u, (o && o->signalled) ? 1u : 0u);\n"
+        "    if (o) {\n"
+        "        o->signalled = true;\n"
+        "        sched_wake_all();\n"
+        "    }\n"
+        "    set_eax(c, o ? 1 : 0);\n"
+        "}\n",
+        "[reflex-sync] SetEvent",
+    )
+
+    replace_once(
+        kernel32,
+        "void k_WaitForSingleObject(X86 *c) {\n"
+        "    uint32_t h = arg(c, 0);\n"
+        "    set_eax(c, sched_wait_objects(&h, 1, false, arg(c, 1)));\n"
+        "}\n",
+        "void k_WaitForSingleObject(X86 *c) {\n"
+        "    uint32_t h = arg(c, 0);\n"
+        "    const uint32_t timeout = arg(c, 1);\n"
+        "    HObj *before = handle_any(h);\n"
+        "    const uint32_t reflex_h = gm_valid(0x00d67ce8u, 4) ? rd32(0x00d67ce8u) : 0u;\n"
+        "    const bool trace = h == reflex_h || (before && before->object_name == \"FMODQueueProcessEvent\");\n"
+        "    if (trace)\n"
+        "        fprintf(stderr, \"[reflex-sync] WaitForSingleObject enter tid=%u handle=%08x guest_global=%08x valid=%u kind=%d timeout=%08x signalled=%u handles=%zu\\n\",\n"
+        "                cur_thread_id(), h, reflex_h, before ? 1u : 0u, before ? (int)before->kind : -1,\n"
+        "                timeout, (before && before->signalled) ? 1u : 0u, handles().size());\n"
+        "    const uint32_t rc = sched_wait_objects(&h, 1, false, timeout);\n"
+        "    if (trace) {\n"
+        "        HObj *after = handle_any(h);\n"
+        "        fprintf(stderr, \"[reflex-sync] WaitForSingleObject exit tid=%u handle=%08x result=%08x last_error=%u valid_after=%u signalled_after=%u handles=%zu\\n\",\n"
+        "                cur_thread_id(), h, rc, get_last_error(), after ? 1u : 0u,\n"
+        "                (after && after->signalled) ? 1u : 0u, handles().size());\n"
+        "    }\n"
+        "    set_eax(c, rc);\n"
+        "}\n",
+        "[reflex-sync] WaitForSingleObject enter",
+    )
+
+    replace_once(
+        kernel32,
+        "void k_CloseHandle(X86 *c) {\n"
+        "    uint32_t h = arg(c, 0);\n"
+        "    HObj *o = handle_any(h);\n"
+        "    if (!o) {\n"
+        "        set_last_error(ERROR_INVALID_HANDLE_);\n"
+        "        set_eax(c, 0);\n"
+        "        return;\n"
+        "    }\n",
+        "void k_CloseHandle(X86 *c) {\n"
+        "    uint32_t h = arg(c, 0);\n"
+        "    HObj *o = handle_any(h);\n"
+        "    const uint32_t reflex_h = gm_valid(0x00d67ce8u, 4) ? rd32(0x00d67ce8u) : 0u;\n"
+        "    if (h == reflex_h || (o && o->object_name == \"FMODQueueProcessEvent\"))\n"
+        "        fprintf(stderr, \"[reflex-sync] CloseHandle handle=%08x guest_global=%08x valid=%u kind=%d refs=%u handles=%zu\\n\",\n"
+        "                h, reflex_h, o ? 1u : 0u, o ? (int)o->kind : -1, o ? o->references : 0u, handles().size());\n"
+        "    if (!o) {\n"
+        "        set_last_error(ERROR_INVALID_HANDLE_);\n"
+        "        set_eax(c, 0);\n"
+        "        return;\n"
+        "    }\n",
+        "[reflex-sync] CloseHandle",
+    )
+
     print("Applied Reflex runtime import/ABI compatibility patch")
 
 
