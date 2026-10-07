@@ -250,6 +250,7 @@ def main():
 
     names = load_names(args.listing_root)
     if args.quick:
+        print_callers(args.listing_root, "0x00883ab2", 100)
         print_string_rows(args.listing_root, [
             "00970078", "00970d84", "00970d90", "00970d98",
             "0096d61c", "0096d644", "00952780",
