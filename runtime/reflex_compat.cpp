@@ -645,15 +645,154 @@ void crt_srand(X86 *c) {
     set_eax(c, 0);
 }
 
-void d3dx_compile_shader_unavailable(X86 *c) {
-    // D3DXCompileShader is stdcall with ten stack arguments. Report E_FAIL
-    // and clear every output instead of returning S_OK with null garbage.
-    for (uint32_t i = 7; i <= 9; ++i) {
-        const uint32_t out = arg(c, i);
+uint32_t g_d3dx_buffer_vtable = 0;
+
+void d3dx_buffer_query_interface(X86 *c) {
+    const uint32_t self = arg(c, 0);
+    const uint32_t out = arg(c, 2);
+    if (!self || !gm_valid(self, 16) || !out || !gm_valid(out, 4)) {
+        set_eax(c, 0x80004003u); // E_POINTER
+        return;
+    }
+    uint32_t refs = rd32(self + 4);
+    if (refs != UINT32_MAX)
+        wr32(self + 4, refs + 1);
+    wr32(out, self);
+    set_eax(c, 0); // S_OK
+}
+
+void d3dx_buffer_addref(X86 *c) {
+    const uint32_t self = arg(c, 0);
+    if (!self || !gm_valid(self, 16)) {
+        set_eax(c, 0);
+        return;
+    }
+    uint32_t refs = rd32(self + 4);
+    if (refs != UINT32_MAX)
+        ++refs;
+    wr32(self + 4, refs);
+    set_eax(c, refs);
+}
+
+void d3dx_buffer_release(X86 *c) {
+    const uint32_t self = arg(c, 0);
+    if (!self || !gm_valid(self, 16)) {
+        set_eax(c, 0);
+        return;
+    }
+    uint32_t refs = rd32(self + 4);
+    if (refs)
+        --refs;
+    if (!refs) {
+        const uint32_t data = rd32(self + 8);
+        if (data && heap_owns(data))
+            heap_free(data);
+        if (heap_owns(self))
+            heap_free(self);
+    } else {
+        wr32(self + 4, refs);
+    }
+    set_eax(c, refs);
+}
+
+void d3dx_buffer_pointer(X86 *c) {
+    const uint32_t self = arg(c, 0);
+    set_eax(c, self && gm_valid(self, 16) ? rd32(self + 8) : 0);
+}
+
+void d3dx_buffer_size(X86 *c) {
+    const uint32_t self = arg(c, 0);
+    set_eax(c, self && gm_valid(self, 16) ? rd32(self + 12) : 0);
+}
+
+uint32_t d3dx_buffer_vtable() {
+    if (g_d3dx_buffer_vtable && heap_owns(g_d3dx_buffer_vtable))
+        return g_d3dx_buffer_vtable;
+
+    const uint32_t vt = heap_alloc(5 * 4, true, 16);
+    if (!vt)
+        return 0;
+
+    const struct {
+        const char *name;
+        uint8_t argc;
+        void (*fn)(X86 *);
+    } methods[] = {
+        {"ID3DXBuffer::QueryInterface", 3, d3dx_buffer_query_interface},
+        {"ID3DXBuffer::AddRef", 1, d3dx_buffer_addref},
+        {"ID3DXBuffer::Release", 1, d3dx_buffer_release},
+        {"ID3DXBuffer::GetBufferPointer", 1, d3dx_buffer_pointer},
+        {"ID3DXBuffer::GetBufferSize", 1, d3dx_buffer_size},
+    };
+
+    for (uint32_t i = 0; i < 5; ++i) {
+        const uint32_t tramp = imports_alloc_trampoline(
+            "d3dx9_43.dll", methods[i].name, methods[i].fn, methods[i].argc);
+        if (!tramp) {
+            heap_free(vt);
+            return 0;
+        }
+        wr32(vt + i * 4, tramp);
+    }
+    g_d3dx_buffer_vtable = vt;
+    return vt;
+}
+
+uint32_t d3dx_make_source_buffer(uint32_t src, uint32_t size) {
+    const uint32_t vt = d3dx_buffer_vtable();
+    if (!vt || !src || !size || !gm_valid(src, size))
+        return 0;
+
+    const uint32_t data = heap_alloc(size + 1, true, 16);
+    const uint32_t obj = heap_alloc(16, true, 16);
+    if (!data || !obj) {
+        if (data)
+            heap_free(data);
+        if (obj)
+            heap_free(obj);
+        return 0;
+    }
+
+    memcpy(g_mem + data, g_mem + src, size);
+    wr32(obj + 0, vt);
+    wr32(obj + 4, 1);
+    wr32(obj + 8, data);
+    wr32(obj + 12, size);
+    return obj;
+}
+
+void d3dx_compile_shader_bridge(X86 *c) {
+    // Reflex compiles a small set of embedded SM3 fullscreen shaders at
+    // startup. For bring-up, expose the source through a correct ID3DXBuffer
+    // object so the game's COM lifetime and GetBufferPointer calls are valid.
+    // The pinned D3D9 Create*Shader methods are currently non-consuming stubs;
+    // real HLSL -> SM3 compilation is the next renderer milestone.
+    const uint32_t shader_out = arg(c, 7);
+    const uint32_t error_out = arg(c, 8);
+    const uint32_t constants_out = arg(c, 9);
+    for (uint32_t out : {shader_out, error_out, constants_out})
         if (out && gm_valid(out, 4))
             wr32(out, 0);
+
+    const uint32_t src = arg(c, 0);
+    const uint32_t size = arg(c, 1);
+    if (!shader_out || !gm_valid(shader_out, 4) || !src || !size || !gm_valid(src, size)) {
+        set_eax(c, 0x80070057u); // E_INVALIDARG
+        return;
     }
-    set_eax(c, 0x80004005u); // E_FAIL
+
+    const uint32_t buffer = d3dx_make_source_buffer(src, size);
+    if (!buffer) {
+        set_eax(c, 0x8007000eu); // E_OUTOFMEMORY
+        return;
+    }
+
+    wr32(shader_out, buffer);
+    const std::string entry = gm_str(arg(c, 4), 128);
+    const std::string profile = gm_str(arg(c, 5), 128);
+    fprintf(stderr, "[recomp] D3DXCompileShader bridge: entry=%s profile=%s bytes=%u buffer=%08x\\n",
+            entry.c_str(), profile.c_str(), size, buffer);
+    set_eax(c, 0); // S_OK
 }
 
 void fmod_ok(X86 *c) {
@@ -1432,7 +1571,7 @@ const ImportShim k_reflex_shims[] = {
 
     // Reached external middleware imports. Model the ABI and fail explicitly
     // when the host does not yet provide the underlying service.
-    {"d3dx9_43.dll", "D3DXCompileShader", 10, d3dx_compile_shader_unavailable},
+    {"d3dx9_43.dll", "D3DXCompileShader", 10, d3dx_compile_shader_bridge},
     {"fmodexL.dll", "FMOD_Debug_SetLevel", 1, fmod_ok},
     {"fmodexL.dll", "FMOD_Memory_Initialize", 5, fmod_ok},
     {"fmod_eventL.dll", "_FMOD_EventSystem_Create@4", 1,
