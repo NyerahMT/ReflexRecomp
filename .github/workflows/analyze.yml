@@ -8,6 +8,7 @@ on:
     paths:
       - "game.toml"
       - "tools/analyze.py"
+      - "tools/patch_reflex_d3d9_shaders.py"
       - ".github/workflows/analyze.yml"
 
 permissions:
@@ -52,6 +53,7 @@ jobs:
         run: |
           python3 tools/patch_reflex_seh.py
           python3 tools/patch_reflex_runtime.py
+          python3 tools/patch_reflex_d3d9_shaders.py
           python3 tools/patch_reflex_sse.py
           python3 tools/patch_reflex_interp.py
 
