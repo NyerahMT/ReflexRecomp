@@ -147,51 +147,11 @@ jobs:
       - name: Link private game input
         run: .venv/bin/python tools/setup.py --install "$REFLEX_GAME_ROOT" --link-only
 
-      - name: Resolve current null-call frontier
-        run: |
-          set -euo pipefail
-          asm_root="analysis/decompiled/MXReflex.exe/functions"
-          hit="$(grep -l -i -m1 '^007ade7a  ' "$asm_root"/*.asm | head -n 1 || true)"
-          if [[ -z "$hit" ]]; then
-            echo "::error::Could not map runtime return address 0x008244E8 into the private Reflex listing"
-            exit 1
-          fi
-          frontier_fn="$(basename "$hit" .asm)"
-          echo "REFLEX_FRONTIER_FN=$frontier_fn" >> "$GITHUB_ENV"
-          echo "Mapped runtime return 0x007ADE7A to private function $frontier_fn"
-
-      - name: Refresh current frontier from private listing
-        run: |
-          set -euo pipefail
-          fresh="$RUNNER_TEMP/reflex-fn-refresh"
-          rm -rf "$fresh"
-          mkdir -p "$fresh"
-
-          # The private baseline is already translated with the current
-          # Reflex translator patches. Do not refresh old hash/allocator
-          # frontier functions here: targeted --only translation can turn
-          # their interior-entry calls back into dispatcher misses.
-          refresh=(
-            "$REFLEX_FRONTIER_FN"
-          )
-
-          .venv/bin/python kit/tools/recomp/translate.py \
-            --game "$GITHUB_WORKSPACE" \
-            --out "$fresh" \
-            --only "${refresh[@]}" \
-            --allow-table-gaps "Targeted fast refresh uses the established Reflex recovery policy" \
-            --allow-unmodelled "Targeted fast refresh keeps the established Reflex unresolved-path policy"
-
-          for addr in "${refresh[@]}"; do
-            python3 tools/refresh_cached_function.py \
-              --cached build/recomp/gen \
-              --fresh "$fresh" \
-              --address "$addr"
-          done
-
-          echo "Refreshed only the active private frontier function; preserved the known-good baseline dispatch table."
-
-      - name: Instrument current Registry caller frontier
+      # The private baseline already contains the current Ghidra recovery and
+      # translated game code. Runtime/compatibility edits must not regenerate
+      # cached functions: targeted translation changes dependency closure and
+      # can regress valid interior-entry/direct-call dispatch.
+      - name: Instrument cached runtime frontier
         run: python3 tools/patch_reflex_call_trace.py
 
       - name: Build from cached translation
