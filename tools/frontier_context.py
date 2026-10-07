@@ -250,6 +250,11 @@ def main():
 
     names = load_names(args.listing_root)
     if args.quick:
+        print_string_rows(args.listing_root, [
+            "00970078", "00970d84", "00970d90", "00970d98",
+            "0096d61c", "0096d644", "00952780",
+        ])
+        print_function_strings(args.listing_root, ["007adc60", "00883ab2"])
         for raw in args.addresses:
             target = int(raw.lower().removeprefix("0x"), 16)
             context_for(args.listing_root, target, names)
