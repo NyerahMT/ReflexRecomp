@@ -253,7 +253,9 @@ def main():
         print_callers(args.listing_root, "0x00883ab2", 100)
         print_literal_xrefs(args.listing_root, "0x00d67ce8", 120)
         print_literal_xrefs(args.listing_root, "0x00916008", 120)
+        print_literal_xrefs(args.listing_root, "0x00972db8", 120)
         print_string_rows(args.listing_root, [
+            "00972db8",
             "00970078", "00970d84", "00970d90", "00970d98",
             "0096d61c", "0096d644", "00952780",
             "00934c88", "00935138", "00946294", "0094629c",
