@@ -87,8 +87,9 @@ jobs:
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/reflex-assets/Archive.4.zip"
+          list="$RUNNER_TEMP/reflex-assets/Archive.4.list"
           pkg="$RUNNER_TEMP/reflex-assets/EngineDependencies.dx9.package"
-          rm -f "$archive" "$pkg"
+          rm -f "$archive" "$list" "$pkg"
 
           gh release download "$INPUT_TAG" \
             --repo "$INPUT_REPO" \
@@ -96,81 +97,27 @@ jobs:
             --dir "$RUNNER_TEMP/reflex-assets" \
             --clobber
 
-          pkg_entry="$(unzip -Z1 "$archive" | grep -i -m1 -E '(^|/)EngineDependencies\\.dx9\\.package
+          unzip -Z1 "$archive" > "$list"
+          pkg_entry="$(grep -i -E '(^|/)EngineDependencies\\.dx9\\.package$' "$list" | sed -n '1p' || true)"
           if [[ -z "$pkg_entry" ]]; then
             echo "::error::EngineDependencies.dx9.package not found in Archive.4.zip"
             exit 1
           fi
+
           echo "Package entry: $pkg_entry"
           unzip -p "$archive" "$pkg_entry" > "$pkg"
-
-          echo "Package identification:"
           stat -c 'size=%s bytes' "$pkg"
           file "$pkg" || true
 
-          echo
           echo "First 256 bytes:"
           xxd -g1 -l 256 "$pkg" || true
 
-          echo
           echo "Candidate embedded names/paths:"
           strings -a -n 4 "$pkg" \
             | grep -i -E 'engine|dependenc|database|package|shader|renderer|\\.dx9|\\.(dll|xml|txt|ini|lua)$' \
             | head -n 400 || true
 
-          echo
           echo "Archive-format probes:"
           7z l "$pkg" || true
           unzip -l "$pkg" || true
           tar -tf "$pkg" || true
-
-          echo
-          echo "Header words (little endian):"
-          python3 - "$pkg" <<'PY'
-          import struct
-          import sys
-
-          data = open(sys.argv[1], "rb").read(256)
-          for off in range(0, len(data) - 3, 4):
-              word = struct.unpack_from("<I", data, off)[0]
-              print(f"{off:04x}: {word:08x} ({word})")
-          PY
- || true)"
-          if [[ -z "$pkg_entry" ]]; then
-            echo "::error::EngineDependencies.dx9.package not found in Archive.4.zip"
-            exit 1
-          fi
-          echo "Package entry: $pkg_entry"
-          unzip -p "$archive" "$pkg_entry" > "$pkg"
-
-          echo "Package identification:"
-          stat -c 'size=%s bytes' "$pkg"
-          file "$pkg" || true
-
-          echo
-          echo "First 256 bytes:"
-          xxd -g1 -l 256 "$pkg" || true
-
-          echo
-          echo "Candidate embedded names/paths:"
-          strings -a -n 4 "$pkg" \
-            | grep -i -E 'engine|dependenc|database|package|shader|renderer|\\.dx9|\\.(dll|xml|txt|ini|lua)$' \
-            | head -n 400 || true
-
-          echo
-          echo "Archive-format probes:"
-          7z l "$pkg" || true
-          unzip -l "$pkg" || true
-          tar -tf "$pkg" || true
-
-          echo
-          echo "Header words (little endian):"
-          python3 - "$pkg" <<'PY'
-          import struct
-          import sys
-
-          data = open(sys.argv[1], "rb").read(256)
-          for off in range(0, len(data) - 3, 4):
-              word = struct.unpack_from("<I", data, off)[0]
-              print(f"{off:04x}: {word:08x} ({word})")
-          PY
