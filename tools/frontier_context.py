@@ -64,7 +64,10 @@ def context_for(root: Path, target: int, names):
 
     nearest = min(range(len(rows)), key=lambda i: abs(rows[i][0] - target))
     lo = max(0, nearest - 16)
-    forward = 64 if target == start and start in {0x007b56d0, 0x007b6680, 0x00756e10, 0x0078fbe0} else 10
+    if target == start and start == 0x00806110:
+        forward = 320
+    else:
+        forward = 64 if target == start and start in {0x007b56d0, 0x007b6680, 0x00756e10, 0x0078fbe0} else 10
     hi = min(len(rows), nearest + forward)
     for i in range(lo, hi):
         mark = ">" if i == nearest else " "
@@ -252,7 +255,13 @@ def main():
     if args.quick:
         print_callers(args.listing_root, "0x00883ab2", 100)
         print_literal_xrefs(args.listing_root, "0x00d67ce8", 120)
+        print_literal_xrefs(args.listing_root, "0x00d67cec", 120)
+        print_literal_xrefs(args.listing_root, "0x00d67fd0", 120)
         print_literal_xrefs(args.listing_root, "0x00916008", 120)
+        print_literal_xrefs(args.listing_root, "0x0091600c", 120)
+        print_literal_xrefs(args.listing_root, "0x00916034", 120)
+        print_literal_xrefs(args.listing_root, "0x00916078", 120)
+        print_literal_xrefs(args.listing_root, "0x009160f8", 120)
         print_literal_xrefs(args.listing_root, "0x00972db8", 120)
         print_literal_xrefs(args.listing_root, "0x00a957f8", 120)
         print_literal_xrefs(args.listing_root, "0x00a957fc", 120)
