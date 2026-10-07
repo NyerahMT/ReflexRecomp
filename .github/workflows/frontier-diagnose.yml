@@ -55,4 +55,6 @@ jobs:
           python3 tools/frontier_context.py \
             --quick \
             analysis/decompiled/MXReflex.exe \
-            007adc60 007ade60 007ade78 007ade90 007adea0 007adeb0 007adec0 007aded0 007adee0 007adef0 007adf00 007adf20 007adf3e 007adf50 007adf60 007adf80 007adfa0 007adfc0 007adfe0 007ae000 007ae020 007ae040
+            00803e80 00803ea0 00803ec0 00803ee0 00803ee7 00803f00 \
+            00805fa0 00805fc0 00805fe0 00806000 00806017 00806020 00806040 \
+            00806f90 00806fb0 00806fd0 00807000
