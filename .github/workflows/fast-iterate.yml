@@ -168,6 +168,9 @@ jobs:
           mkdir -p "$fresh"
 
           refresh=(
+            005c3380
+            005c33c0
+            008fa06a
             008434f0
             0084df50
             00880470
@@ -201,7 +204,12 @@ jobs:
             echo "::error::Reflex SSE refresh still contains a reached/adjacent UNPCKLPS trap"
             exit 1
           fi
-          echo "Refreshed private cached translations for packed-single SSE initializers and the active hash-growth frontier."
+          if grep -Rqs -E 'recomp_unknown_call\(c, 0x(005c3380|005c33c0|008fa06a)u\)' build/recomp/gen; then
+            echo "::error::Fast refresh regressed a runtime-proven Reflex call target"
+            grep -R -n -E 'recomp_unknown_call\(c, 0x(005c3380|005c33c0|008fa06a)u\)' build/recomp/gen | head -n 40 || true
+            exit 1
+          fi
+          echo "Refreshed private cached translations while retaining runtime-proven call targets."
 
       - name: Instrument current Registry caller frontier
         run: python3 tools/patch_reflex_call_trace.py
