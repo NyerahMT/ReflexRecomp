@@ -34,7 +34,7 @@ jobs:
             --dir "$RUNNER_TEMP/reflex-assets" \
             --clobber
 
-      - name: Inspect database payload
+      - name: Inspect core database payload
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/reflex-assets/$CORE_ASSET"
@@ -46,3 +46,29 @@ jobs:
           echo
           echo "Database directory sample:"
           unzip -Z1 "$archive" | grep -i -E '(^|/)Database/' | head -n 100 || true
+
+      - name: Locate database in private archive chunks
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
+        run: |
+          set -euo pipefail
+          for asset in Archive.zip Archive.2.zip Archive.3.zip Archive.4.zip; do
+            echo "=== $asset ==="
+            rm -f "$RUNNER_TEMP/reflex-assets"/Archive*.zip
+            gh release download "$INPUT_TAG" \
+              --repo "$INPUT_REPO" \
+              --pattern "$asset" \
+              --dir "$RUNNER_TEMP/reflex-assets" \
+              --clobber
+            archive="$RUNNER_TEMP/reflex-assets/$asset"
+            matches="$(unzip -Z1 "$archive" | grep -i -E '(^|/)Database/EngineDependencies\.dx9\.database$' || true)"
+            if [[ -n "$matches" ]]; then
+              echo "FOUND EngineDependencies in $asset:"
+              printf '%s\n' "$matches"
+              echo "Nearby Database entries:"
+              unzip -Z1 "$archive" | grep -i -E '(^|/)Database/' | head -n 100 || true
+            else
+              echo "No EngineDependencies target in $asset"
+            fi
+            rm -f "$archive"
+          done
