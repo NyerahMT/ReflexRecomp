@@ -61,14 +61,25 @@ jobs:
               --dir "$RUNNER_TEMP/reflex-assets" \
               --clobber
             archive="$RUNNER_TEMP/reflex-assets/$asset"
-            matches="$(unzip -Z1 "$archive" | grep -i -E '(^|/)Database/EngineDependencies\.dx9\.database$' || true)"
+            list="$RUNNER_TEMP/reflex-assets/$asset.list"
+            unzip -Z1 "$archive" > "$list"
+            matches="$(grep -i -E '(^|/)Database/EngineDependencies\.dx9\.database          done
+ "$list" || true)"
             if [[ -n "$matches" ]]; then
               echo "FOUND EngineDependencies in $asset:"
               printf '%s\n' "$matches"
-              echo "Nearby Database entries:"
-              unzip -Z1 "$archive" | grep -i -E '(^|/)Database/' | head -n 100 || true
             else
-              echo "No EngineDependencies target in $asset"
+              echo "No exact EngineDependencies target in $asset"
             fi
-            rm -f "$archive"
+            echo "All .database entries:"
+            grep -i -E '\.database          done
+ "$list" | head -n 200 || true
+            echo "Dependency-like entries:"
+            grep -i -E 'dependenc|engine.*db|db.*engine|database' "$list" | head -n 250 || true
+            echo "Likely nested/packed containers:"
+            grep -i -E '\.(zip|7z|rar|pak|pack|arc|bin|dat|vpp|vpp_pc|bff|bundle|cab)          done
+ "$list" | head -n 250 || true
+            echo "Most common file extensions:"
+            awk -F/ '{print $NF}' "$list" | awk -F. 'NF>1 {print tolower($NF)}' | sort | uniq -c | sort -nr | head -n 40 || true
+            rm -f "$list" "$archive"
           done
