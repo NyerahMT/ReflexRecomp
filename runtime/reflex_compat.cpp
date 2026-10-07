@@ -1709,7 +1709,7 @@ const ImportShim k_reflex_shims[] = {
     // when the host does not yet provide the underlying service.
     {"d3dx9_43.dll", "D3DXCompileShader", 10, d3dx_compile_shader_bridge},
     {"fmodexL.dll", "FMOD_Debug_SetLevel", 1, fmod_ok},
-    {"fmodexL.dll", "FMOD_Memory_Initialize", 5, fmod_ok},
+    {"fmodexL.dll", "FMOD_Memory_Initialize", 6, fmod_ok},
     {"fmod_eventL.dll", "_FMOD_EventSystem_Create@4", 1,
      fmod_event_system_create},
     {"fmodexL.dll",
