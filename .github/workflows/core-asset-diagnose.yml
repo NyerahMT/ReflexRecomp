@@ -22,6 +22,14 @@ jobs:
       - name: Checkout ReflexRecomp
         uses: actions/checkout@v7.0.1
 
+      - name: List private input release assets
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Assets on $INPUT_REPO release $INPUT_TAG:"
+          gh release view "$INPUT_TAG" --repo "$INPUT_REPO" --json assets --jq '.assets[].name'
+
       - name: Download private Reflex core
         env:
           GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
@@ -98,7 +106,7 @@ jobs:
             --clobber
 
           unzip -Z1 "$archive" > "$list"
-          pkg_entry="$(grep -i -E '(^|/)EngineDependencies\\.dx9\\.package$' "$list" | sed -n '1p' || true)"
+          pkg_entry="$(grep -i -F 'EngineDependencies.dx9.package' "$list" | grep -vi '__MACOSX/' | sed -n '1p' || true)"
           if [[ -z "$pkg_entry" ]]; then
             echo "::error::EngineDependencies.dx9.package not found in Archive.4.zip"
             exit 1
