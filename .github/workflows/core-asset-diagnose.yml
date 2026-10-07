@@ -1,0 +1,48 @@
+name: Reflex Core Asset Diagnose
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/core-asset-diagnose.yml"
+
+permissions:
+  contents: read
+
+env:
+  INPUT_REPO: NyerahMT/ReflexBuildInput
+  INPUT_TAG: game-input-v1
+  CORE_ASSET: Game-Core.zip
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout ReflexRecomp
+        uses: actions/checkout@v7.0.1
+
+      - name: Download private Reflex core
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/reflex-assets"
+          gh release download "$INPUT_TAG" \
+            --repo "$INPUT_REPO" \
+            --pattern "$CORE_ASSET" \
+            --dir "$RUNNER_TEMP/reflex-assets" \
+            --clobber
+
+      - name: Inspect database payload
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/reflex-assets/$CORE_ASSET"
+          echo "Exact/CI-insensitive target matches:"
+          unzip -Z1 "$archive" | grep -i -E '(^|/)Database/EngineDependencies\.dx9\.database$' || true
+          echo
+          echo "EngineDependencies-like entries:"
+          unzip -Z1 "$archive" | grep -i 'EngineDependencies' | head -n 100 || true
+          echo
+          echo "Database directory sample:"
+          unzip -Z1 "$archive" | grep -i -E '(^|/)Database/' | head -n 100 || true
