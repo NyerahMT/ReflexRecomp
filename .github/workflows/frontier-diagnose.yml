@@ -52,9 +52,23 @@ jobs:
       - name: Map current runtime frontier
         shell: bash
         run: |
+          mkdir -p build/logs
+          set -o pipefail
           python3 tools/frontier_context.py \
             --quick \
             analysis/decompiled/MXReflex.exe \
             0078fd40 0078fd60 0078fd70 0078fd72 0078fd80 0078fda0 0078fdc0 \
             0078fde0 0078fe00 0078fe20 0078fe40 0078fe60 0078fe80 0078fea0 \
-            0078fec0 0078fee0 0078ff00 0078ff20 0078ff40
+            0078fec0 0078fee0 0078ff00 0078ff20 0078ff40 \
+            008042b7 008042db 00804303 00805d03 \
+            00806017 00806028 00806047 00806f90 00806fc2 0084b065 \
+            | tee build/logs/frontier-context.txt
+
+      - name: Upload frontier context
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reflex-frontier-context-${{ github.run_number }}
+          path: build/logs/frontier-context.txt
+          if-no-files-found: warn
+          retention-days: 14
