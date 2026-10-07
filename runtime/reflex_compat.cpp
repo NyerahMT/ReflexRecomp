@@ -803,11 +803,76 @@ void fmod_fail(X86 *c) {
     set_eax(c, 1); // any nonzero FMOD_RESULT is failure
 }
 
-void fmod_event_system_create_unavailable(X86 *c) {
-    const uint32_t out = arg(c, 0);
-    if (out && gm_valid(out, 4))
-        wr32(out, 0);
-    set_eax(c, 1);
+// Minimal FMOD Ex / Designer object model for startup. Reflex creates the
+// EventSystem, immediately asks virtual slot 7 for its low-level System, then
+// calls the ordinary exported System methods. Returning success with a null
+// EventSystem was therefore worse than returning an error: the next virtual
+// dispatch dereferenced address zero.
+uint32_t g_fmod_event_system = 0;
+uint32_t g_fmod_event_vtable = 0;
+uint32_t g_fmod_system = 0;
+uint32_t g_fmod_channel_group = 0;
+uint32_t g_fmod_sound_group = 0;
+
+uint32_t fmod_opaque(uint32_t &slot) {
+    if (!slot || !heap_owns(slot))
+        slot = heap_alloc(8, true, 16);
+    return slot;
+}
+
+void fmod_system_get_version(X86 *c) {
+    const uint32_t out = arg(c, 1); // __stdcall member: [this, version*]
+    if (!out || !gm_valid(out, 4)) {
+        set_eax(c, 1);
+        return;
+    }
+    // Reflex only reports this value during startup; 4.26 is contemporary
+    // with the FMOD Ex ABI used by the executable.
+    wr32(out, 0x00042600u);
+    set_eax(c, 0);
+}
+
+void fmod_system_get_master_channel_group(X86 *c) {
+    const uint32_t out = arg(c, 1);
+    const uint32_t group = fmod_opaque(g_fmod_channel_group);
+    if (!out || !gm_valid(out, 4) || !group) {
+        set_eax(c, 1);
+        return;
+    }
+    wr32(out, group);
+    set_eax(c, 0);
+}
+
+void fmod_system_get_master_sound_group(X86 *c) {
+    const uint32_t out = arg(c, 1);
+    const uint32_t group = fmod_opaque(g_fmod_sound_group);
+    if (!out || !gm_valid(out, 4) || !group) {
+        set_eax(c, 1);
+        return;
+    }
+    wr32(out, group);
+    set_eax(c, 0);
+}
+
+void fmod_event_get_system_object(X86 *c) {
+    const uint32_t out = arg(c, 1); // [this, FMOD::System **]
+    const uint32_t system = fmod_opaque(g_fmod_system);
+    if (!out || !gm_valid(out, 4) || !system) {
+        set_eax(c, 1);
+        return;
+    }
+    wr32(out, system);
+    set_eax(c, 0);
+}
+
+void fmod_event_get_version(X86 *c) {
+    const uint32_t out = arg(c, 1);
+    if (!out || !gm_valid(out, 4)) {
+        set_eax(c, 1);
+        return;
+    }
+    wr32(out, 0x00042600u);
+    set_eax(c, 0);
 }
 
 void fmod_fail_out_ptr(X86 *c) {
@@ -817,11 +882,75 @@ void fmod_fail_out_ptr(X86 *c) {
     set_eax(c, 1);
 }
 
-void fmod_fail_version(X86 *c) {
-    const uint32_t out = arg(c, 1); // __stdcall member: [this, version*]
-    if (out && gm_valid(out, 4))
+uint32_t fmod_event_system_vtable() {
+    if (g_fmod_event_vtable && heap_owns(g_fmod_event_vtable))
+        return g_fmod_event_vtable;
+
+    // FMOD Designer EventSystem ABI reached by Reflex:
+    //   0 init, 1 release, 2 update, 3 setMediaPath, 4 setPluginPath,
+    //   5 getVersion, 6 getInfo, 7 getSystemObject, 8 getMusicSystem.
+    const uint32_t vt = heap_alloc(9 * 4, true, 16);
+    if (!vt)
+        return 0;
+
+    const struct {
+        const char *name;
+        uint8_t argc;
+        void (*fn)(X86 *);
+    } methods[] = {
+        {"FMOD::EventSystem::init", 5, fmod_ok},
+        {"FMOD::EventSystem::release", 1, fmod_ok},
+        {"FMOD::EventSystem::update", 1, fmod_ok},
+        {"FMOD::EventSystem::setMediaPath", 2, fmod_ok},
+        {"FMOD::EventSystem::setPluginPath", 2, fmod_ok},
+        {"FMOD::EventSystem::getVersion", 2, fmod_event_get_version},
+        {"FMOD::EventSystem::getInfo", 2, fmod_fail},
+        {"FMOD::EventSystem::getSystemObject", 2, fmod_event_get_system_object},
+        {"FMOD::EventSystem::getMusicSystem", 2, fmod_fail_out_ptr},
+    };
+
+    for (uint32_t i = 0; i < 9; ++i) {
+        const uint32_t tramp = imports_alloc_trampoline(
+            "fmod_eventL.dll", methods[i].name, methods[i].fn, methods[i].argc);
+        if (!tramp) {
+            heap_free(vt);
+            return 0;
+        }
+        wr32(vt + i * 4, tramp);
+    }
+    g_fmod_event_vtable = vt;
+    return vt;
+}
+
+void fmod_event_system_create(X86 *c) {
+    const uint32_t out = arg(c, 0);
+    if (!out || !gm_valid(out, 4)) {
+        set_eax(c, 1);
+        return;
+    }
+
+    const uint32_t vt = fmod_event_system_vtable();
+    if (!vt) {
         wr32(out, 0);
-    set_eax(c, 1);
+        set_eax(c, 1);
+        return;
+    }
+
+    if (!g_fmod_event_system || !heap_owns(g_fmod_event_system)) {
+        g_fmod_event_system = heap_alloc(8, true, 16);
+        if (!g_fmod_event_system) {
+            wr32(out, 0);
+            set_eax(c, 1);
+            return;
+        }
+        wr32(g_fmod_event_system, vt);
+        wr32(g_fmod_event_system + 4, 1);
+    }
+
+    wr32(out, g_fmod_event_system);
+    fprintf(stderr, "[recomp] FMOD EventSystem bridge: event=%08x system=%08x\\n",
+            g_fmod_event_system, fmod_opaque(g_fmod_system));
+    set_eax(c, 0);
 }
 
 uint32_t guest_scalar(uint32_t &slot, uint32_t initial) {
@@ -1575,25 +1704,25 @@ const ImportShim k_reflex_shims[] = {
     {"fmodexL.dll", "FMOD_Debug_SetLevel", 1, fmod_ok},
     {"fmodexL.dll", "FMOD_Memory_Initialize", 5, fmod_ok},
     {"fmod_eventL.dll", "_FMOD_EventSystem_Create@4", 1,
-     fmod_event_system_create_unavailable},
+     fmod_event_system_create},
     {"fmodexL.dll",
      "?setSoftwareChannels@System@FMOD@@QAG?AW4FMOD_RESULT@@H@Z",
-     2, fmod_fail},
+     2, fmod_ok},
     {"fmodexL.dll",
      "?setAdvancedSettings@System@FMOD@@QAG?AW4FMOD_RESULT@@PAUFMOD_ADVANCEDSETTINGS@@@Z",
-     2, fmod_fail},
+     2, fmod_ok},
     {"fmodexL.dll",
      "?set3DSettings@System@FMOD@@QAG?AW4FMOD_RESULT@@MMM@Z",
-     4, fmod_fail},
+     4, fmod_ok},
     {"fmodexL.dll",
      "?getMasterChannelGroup@System@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVChannelGroup@2@@Z",
-     2, fmod_fail_out_ptr},
+     2, fmod_system_get_master_channel_group},
     {"fmodexL.dll",
      "?getMasterSoundGroup@System@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVSoundGroup@2@@Z",
-     2, fmod_fail_out_ptr},
+     2, fmod_system_get_master_sound_group},
     {"fmodexL.dll",
      "?getVersion@System@FMOD@@QAG?AW4FMOD_RESULT@@PAI@Z",
-     2, fmod_fail_version},
+     2, fmod_system_get_version},
 
     // MSVC thiscall: ECX carries this; one explicit constructor argument is
     // callee-cleaned, while the destructor has no stack arguments.
