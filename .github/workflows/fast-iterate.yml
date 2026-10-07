@@ -205,11 +205,16 @@ jobs:
                 RECOMP_WATCH_FRAME=1 \
                 SDL_AUDIODRIVER=dummy \
                 "$app" \
-            2>&1 | tee build/logs/runtime.log
-          rc=${PIPESTATUS[0]}
+            >build/logs/runtime.log 2>&1
+          rc=$?
           set -e
           echo "$rc" > build/logs/runtime-exit-code.txt
           echo "Runtime probe exit code: $rc"
+          echo "=== Reflex synchronization trace ==="
+          grep -E '\[reflex-sync\]' build/logs/runtime.log | tail -n 240 || true
+          echo "=== Runtime frontier tail ==="
+          grep -E '\[host\] SIG|SEH: unhandled|call to unknown target|call to 00000000|unimplemented import|divide error|unknown stdcall argument count' \
+            build/logs/runtime.log | tail -n 120 || true
 
           if [[ "$rc" -eq 124 || "$rc" -eq 137 ]]; then
             if grep -Eq 'unknown stdcall argument count|SEH: unhandled|call to unknown target|call to 00000000' build/logs/runtime.log; then
