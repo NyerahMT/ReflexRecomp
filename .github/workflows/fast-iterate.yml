@@ -113,6 +113,27 @@ jobs:
           test -s "$RUNNER_TEMP/reflex-assets/$CORE_ASSET"
           unzip -q "$RUNNER_TEMP/reflex-assets/$CORE_ASSET" -d "$RUNNER_TEMP/reflex-game"
 
+          # Stage the database/package payload that is not present in Game-Core.zip.
+          # Archive.4 currently contains the startup Database assets Reflex reaches
+          # after renderer/shader initialization.
+          gh release download "$INPUT_TAG" \
+            --repo "$INPUT_REPO" \
+            --pattern "Archive.4.zip" \
+            --dir "$RUNNER_TEMP/reflex-assets" \
+            --clobber
+          test -s "$RUNNER_TEMP/reflex-assets/Archive.4.zip"
+          mkdir -p "$RUNNER_TEMP/reflex-game/Database"
+          unzip -q "$RUNNER_TEMP/reflex-assets/Archive.4.zip" \
+            -x '__MACOSX/*' \
+            -d "$RUNNER_TEMP/reflex-game/Database"
+          rm -f "$RUNNER_TEMP/reflex-assets/Archive.4.zip"
+
+          test -s "$RUNNER_TEMP/reflex-game/Database/MXUI.dx9.database"
+          test -s "$RUNNER_TEMP/reflex-game/Database/EngineDependencies.dx9.package"
+          if [[ ! -s "$RUNNER_TEMP/reflex-game/Database/EngineDependencies.dx9.database" ]]; then
+            echo "::warning::Database/EngineDependencies.dx9.database is absent from the current private input archives; runtime will still stop when Reflex opens this companion BXML index."
+          fi
+
           if ! gh release download "$BASELINE_TAG" \
             --repo "$INPUT_REPO" \
             --pattern "$BASELINE_ASSET" \
