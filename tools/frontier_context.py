@@ -64,8 +64,8 @@ def context_for(root: Path, target: int, names):
 
     nearest = min(range(len(rows)), key=lambda i: abs(rows[i][0] - target))
     lo = max(0, nearest - 16)
-    if target == start and start == 0x00806110:
-        forward = 320
+    if target == start and start in {0x00804340, 0x00806110}:
+        forward = 420 if start == 0x00804340 else 320
     else:
         forward = 64 if target == start and start in {0x007b56d0, 0x007b6680, 0x00756e10, 0x0078fbe0} else 10
     hi = min(len(rows), nearest + forward)
