@@ -1213,6 +1213,13 @@ void crt_vsnprintf(X86 *c) {
     const uint32_t va = arg(c, 3);
     const std::string res = guest_printf_format(fmt, va);
 
+    if (fmt == 0x00972f38u || dst == 0x00a957fcu) {
+        fprintf(stderr,
+                "[reflex-crt] _vsnprintf esp=%08x dst=%08x cap=%08x fmt=%08x va=%08x "
+                "esi=%08x edi=%08x rendered=%zu\\n",
+                c->r[R_ESP], dst, cap, fmt, va, c->r[R_ESI], c->r[R_EDI], res.size());
+    }
+
     if (!cap) {
         set_eax(c, res.empty() ? 0u : static_cast<uint32_t>(-1));
         return;
