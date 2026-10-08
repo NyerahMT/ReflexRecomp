@@ -37,6 +37,9 @@ inline IntegerParse parse_signed32(const std::string &text, int base) {
         ? static_cast<size_t>(end - text.c_str()) : 0;
     // Compare the parsed value, not the sign of errno. On ERANGE the host
     // returns LLONG_MIN for a negative overflow and LLONG_MAX otherwise.
+    if (parsed < static_cast<long long>(INT32_MIN) ||
+        parsed > static_cast<long long>(INT32_MAX))
+        errno = ERANGE;
     const int32_t narrowed = parsed < static_cast<long long>(INT32_MIN)
         ? INT32_MIN
         : parsed > static_cast<long long>(INT32_MAX)
@@ -66,8 +69,10 @@ inline IntegerParse parse_unsigned32(const std::string &text, int base) {
     if (end == parse_start)
         return {};
     const size_t consumed = static_cast<size_t>(end - first);
-    if (errno == ERANGE || magnitude > UINT32_MAX)
+    if (errno == ERANGE || magnitude > UINT32_MAX) {
+        errno = ERANGE;
         return {UINT32_MAX, consumed};
+    }
     const uint32_t value = static_cast<uint32_t>(magnitude);
     // MSVCR's unsigned 32-bit strtoul accepts a leading minus and negates
     // the *32-bit* magnitude, not the host's 64-bit ULONG value.
