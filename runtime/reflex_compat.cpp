@@ -2027,10 +2027,19 @@ bool msvcp_string_copy_into(uint32_t self, uint32_t src) {
     if (n > 0x0fffffffu || !source || (n && !gm_valid(source, n)))
         return false;
 
-    memset(g_mem + self, 0, 24);
+    // A copy-constructed string can alias a source's inline storage in
+    // corrupted/overlapping guest layouts. Snapshot the SSO payload before
+    // clearing the destination. Allocate long-string storage *before*
+    // overwriting the destination, so OOM does not leave half an object.
+    if (self == src)
+        return true;
     if (n <= 15) {
+        char inline_copy[16] = {};
         if (n)
-            memcpy(g_mem + self, g_mem + source, n);
+            memcpy(inline_copy, g_mem + source, n);
+        memset(g_mem + self, 0, 24);
+        if (n)
+            memcpy(g_mem + self, inline_copy, n);
         g_mem[self + n] = 0;
         wr32(self + 16, n);
         wr32(self + 20, 15);
@@ -2042,6 +2051,7 @@ bool msvcp_string_copy_into(uint32_t self, uint32_t src) {
         return false;
     memcpy(g_mem + data, g_mem + source, n);
     g_mem[data + n] = 0;
+    memset(g_mem + self, 0, 24);
     wr32(self, data);
     wr32(self + 16, n);
     wr32(self + 20, n);
@@ -2061,21 +2071,25 @@ void msvcp_string_ctor_cstr(X86 *c) {
         return;
     }
 
-    memset(g_mem + self, 0, 24);
     const uint32_t n = static_cast<uint32_t>(value.size());
-    if (n <= 15) {
-        memcpy(g_mem + self, value.data(), n);
-        g_mem[self + n] = 0;
-        wr32(self + 16, n);
-        wr32(self + 20, 15);
-    } else {
-        const uint32_t data = heap_alloc(n + 1, false);
+    uint32_t data = 0;
+    if (n > 15) {
+        data = heap_alloc(n + 1, false);
         if (!data) {
             set_eax(c, 0);
             return;
         }
         memcpy(g_mem + data, value.data(), n);
         g_mem[data + n] = 0;
+    }
+    memset(g_mem + self, 0, 24);
+    if (n <= 15) {
+        if (n)
+            memcpy(g_mem + self, value.data(), n);
+        g_mem[self + n] = 0;
+        wr32(self + 16, n);
+        wr32(self + 20, 15);
+    } else {
         wr32(self, data);
         wr32(self + 16, n);
         wr32(self + 20, n);
