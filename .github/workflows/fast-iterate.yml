@@ -222,7 +222,7 @@ jobs:
           xvfb-run -a -s "-screen 0 1280x720x24" \
             timeout --signal=TERM --kill-after=5s 30s \
             env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
-                RECOMP_LOG=2 \
+                RECOMP_LOG=1 \
                 RECOMP_WATCH_FRAME=1 \
                 SDL_AUDIODRIVER=dummy \
                 "$app" \
