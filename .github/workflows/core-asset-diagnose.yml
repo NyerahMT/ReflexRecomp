@@ -78,6 +78,112 @@ jobs:
             else
               echo "No exact EngineDependencies target in $asset"
             fi
+            echo "MXUI package candidates in $asset:"
+            grep -i -E '(^|/)(MXUI[^/]*\\.package|.*MXUI.*)
+            grep -i -E '\.database$' "$list" | head -n 200 || true
+            echo "Dependency-like entries:"
+            grep -i -E 'dependenc|engine.*db|db.*engine|database' "$list" | head -n 250 || true
+            echo "Likely nested/packed containers:"
+            grep -i -E '\.(zip|7z|rar|pak|pack|arc|bin|dat|vpp|vpp_pc|bff|bundle|cab)$' "$list" | head -n 250 || true
+            echo "Most common file extensions:"
+            awk -F/ '{print $NF}' "$list" | awk -F. 'NF>1 {print tolower($NF)}' | sort | uniq -c | sort -nr | head -n 40 || true
+            rm -f "$list" "$archive"
+          done
+
+      - name: Inspect EngineDependencies package structure
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/reflex-assets/Archive.4.zip"
+          list="$RUNNER_TEMP/reflex-assets/Archive.4.list"
+          pkg="$RUNNER_TEMP/reflex-assets/EngineDependencies.dx9.package"
+          rm -f "$archive" "$list" "$pkg"
+
+          gh release download "$INPUT_TAG" \
+            --repo "$INPUT_REPO" \
+            --pattern "Archive.4.zip" \
+            --dir "$RUNNER_TEMP/reflex-assets" \
+            --clobber
+
+          unzip -Z1 "$archive" > "$list"
+          pkg_entry="$(grep -i -F 'EngineDependencies.dx9.package' "$list" | grep -vi '__MACOSX/' | sed -n '1p' || true)"
+          if [[ -z "$pkg_entry" ]]; then
+            echo "::error::EngineDependencies.dx9.package not found in Archive.4.zip"
+            exit 1
+          fi
+
+          echo "Package entry: $pkg_entry"
+          unzip -p "$archive" "$pkg_entry" > "$pkg"
+          stat -c 'size=%s bytes' "$pkg"
+          file "$pkg" || true
+
+          echo "First 256 bytes:"
+          xxd -g1 -l 256 "$pkg" || true
+
+          echo "Candidate embedded names/paths:"
+          strings -a -n 4 "$pkg" \
+            | grep -i -E 'engine|dependenc|database|package|shader|renderer|\\.dx9|\\.(dll|xml|txt|ini|lua)$' \
+            | head -n 400 || true
+
+          echo "Archive-format probes:"
+          7z l "$pkg" || true
+          unzip -l "$pkg" || true
+          tar -tf "$pkg" || true
+ "$list" | head -n 80 || true
+            echo "All .package entries matching UI or menu:"
+            grep -i -E '(^|/)[^/]*(ui|menu)[^/]*\\.package
+            grep -i -E '\.database$' "$list" | head -n 200 || true
+            echo "Dependency-like entries:"
+            grep -i -E 'dependenc|engine.*db|db.*engine|database' "$list" | head -n 250 || true
+            echo "Likely nested/packed containers:"
+            grep -i -E '\.(zip|7z|rar|pak|pack|arc|bin|dat|vpp|vpp_pc|bff|bundle|cab)$' "$list" | head -n 250 || true
+            echo "Most common file extensions:"
+            awk -F/ '{print $NF}' "$list" | awk -F. 'NF>1 {print tolower($NF)}' | sort | uniq -c | sort -nr | head -n 40 || true
+            rm -f "$list" "$archive"
+          done
+
+      - name: Inspect EngineDependencies package structure
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/reflex-assets/Archive.4.zip"
+          list="$RUNNER_TEMP/reflex-assets/Archive.4.list"
+          pkg="$RUNNER_TEMP/reflex-assets/EngineDependencies.dx9.package"
+          rm -f "$archive" "$list" "$pkg"
+
+          gh release download "$INPUT_TAG" \
+            --repo "$INPUT_REPO" \
+            --pattern "Archive.4.zip" \
+            --dir "$RUNNER_TEMP/reflex-assets" \
+            --clobber
+
+          unzip -Z1 "$archive" > "$list"
+          pkg_entry="$(grep -i -F 'EngineDependencies.dx9.package' "$list" | grep -vi '__MACOSX/' | sed -n '1p' || true)"
+          if [[ -z "$pkg_entry" ]]; then
+            echo "::error::EngineDependencies.dx9.package not found in Archive.4.zip"
+            exit 1
+          fi
+
+          echo "Package entry: $pkg_entry"
+          unzip -p "$archive" "$pkg_entry" > "$pkg"
+          stat -c 'size=%s bytes' "$pkg"
+          file "$pkg" || true
+
+          echo "First 256 bytes:"
+          xxd -g1 -l 256 "$pkg" || true
+
+          echo "Candidate embedded names/paths:"
+          strings -a -n 4 "$pkg" \
+            | grep -i -E 'engine|dependenc|database|package|shader|renderer|\\.dx9|\\.(dll|xml|txt|ini|lua)$' \
+            | head -n 400 || true
+
+          echo "Archive-format probes:"
+          7z l "$pkg" || true
+          unzip -l "$pkg" || true
+          tar -tf "$pkg" || true
+ "$list" | head -n 80 || true
             echo "All .database entries:"
             grep -i -E '\.database$' "$list" | head -n 200 || true
             echo "Dependency-like entries:"
