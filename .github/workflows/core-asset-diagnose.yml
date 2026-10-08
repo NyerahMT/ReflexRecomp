@@ -79,7 +79,10 @@ jobs:
               echo "No exact EngineDependencies target in $asset"
             fi
             echo "MXUI package candidates in $asset:"
-            grep -i -E '(^|/)(MXUI[^/]*\\.package|.*MXUI.*)
+            grep -i -E '(^|/)[^/]*MXUI[^/]*\.package$' "$list" | head -n 80 || true
+            echo "All UI/menu package candidates:"
+            grep -i -E '(^|/)[^/]*(ui|menu)[^/]*\.package$' "$list" | head -n 80 || true
+            echo "All .database entries:"
             grep -i -E '\.database$' "$list" | head -n 200 || true
             echo "Dependency-like entries:"
             grep -i -E 'dependenc|engine.*db|db.*engine|database' "$list" | head -n 250 || true
