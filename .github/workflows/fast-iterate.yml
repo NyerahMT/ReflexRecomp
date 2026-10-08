@@ -16,6 +16,7 @@ on:
       - "tools/patch_reflex_d3d9_shaders.py"
       - "tools/patch_reflex_sse.py"
       - "tools/patch_reflex_cached_sse.py"
+      - "tools/check_reflex_boot_progress.py"
       - "tools/patch_reflex_interp.py"
       - "tools/refresh_cached_function.py"
       - "tools/patch_reflex_seh.py"
@@ -244,6 +245,11 @@ jobs:
                 build/logs/runtime.log | tail -n 80 || true
               exit 1
             fi
+            # Survival is not equivalent to startup progress: detect the
+            # previously measured Intro/Intro. resource lookup spin.
+            # Preserve the classification in the log artifact for review.
+            python3 tools/check_reflex_boot_progress.py build/logs/runtime.log \
+              | tee build/logs/runtime-progress.txt
             echo "PASS: Reflex stayed alive for the full 30-second runtime gate without unresolved ABI/control-flow faults."
             exit 0
           fi
