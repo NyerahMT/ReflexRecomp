@@ -15,6 +15,7 @@ on:
       - "tools/patch_reflex_runtime.py"
       - "tools/patch_reflex_d3d9_shaders.py"
       - "tools/patch_reflex_sse.py"
+      - "tools/patch_reflex_cached_sse.py"
       - "tools/patch_reflex_interp.py"
       - "tools/refresh_cached_function.py"
       - "tools/patch_reflex_seh.py"
@@ -175,7 +176,9 @@ jobs:
       # cached functions: targeted translation changes dependency closure and
       # can regress valid interior-entry/direct-call dispatch.
       - name: Instrument cached runtime frontier
-        run: python3 tools/patch_reflex_call_trace.py
+        run: |
+          python3 tools/patch_reflex_call_trace.py
+          python3 tools/patch_reflex_cached_sse.py
 
       - name: Build from cached translation
         id: host
