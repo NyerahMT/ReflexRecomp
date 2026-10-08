@@ -30,13 +30,20 @@ def main() -> None:
     if not NUMERIC_HEADER.is_file():
         raise SystemExit(f"missing {NUMERIC_HEADER}")
     shutil.copyfile(NUMERIC_HEADER, KIT / "runtime" / NUMERIC_HEADER.name)
+    # The SIMD decoder is a separately linked guest CPU helper. Both its
+    # declaration and implementation must be staged into the pinned kit.
+    for filename in ("reflex_packed_sse.h", "reflex_packed_sse.cpp"):
+        source = ROOT / "runtime" / filename
+        if not source.is_file():
+            raise SystemExit(f"missing {source}")
+        shutil.copyfile(source, KIT / "runtime" / filename)
 
     cmake = KIT / "runtime" / "CMakeLists.txt"
     replace_once(
         cmake,
         "  media_foundation.cpp layout.cpp interp.cpp discovery.cpp)",
-        "  media_foundation.cpp layout.cpp interp.cpp discovery.cpp reflex_compat.cpp)",
-        "reflex_compat.cpp)",
+        "  media_foundation.cpp layout.cpp interp.cpp discovery.cpp reflex_compat.cpp reflex_packed_sse.cpp)",
+        "reflex_packed_sse.cpp)",
     )
 
     imports = KIT / "runtime" / "imports.cpp"
