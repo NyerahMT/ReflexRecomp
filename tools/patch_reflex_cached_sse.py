@@ -67,9 +67,56 @@ def patch_generated_sse(directory: Path) -> Path:
     return path
 
 
+# Reflex also reaches MULPS XMM0, [ESP+0x10] at 0x007b34d4.
+# Four independent single-precision lane multiplies; the source is guest
+# stack memory and must be read before each destination lane write.
+MULPS_ADDRESS = 0x007B34D4
+MULPS_MARKER = "Reflex MULPS 007b34d4"
+MULPS_TRAP = re.compile(
+    r"\brecomp_unmodelled\s*\(\s*c\s*,\s*0x0*7b34d4u\s*\)\s*;\s*return\s*;",
+    re.IGNORECASE,
+)
+MULPS_REPLACEMENT = """{
+    /* Reflex MULPS 007b34d4: xmm0.f[0:4] *= guest [ESP+0x10].f[0:4] */
+    const uint32_t reflex_mul_src = c->r[R_ESP] + 0x10u;
+    for (uint32_t reflex_mul_lane = 0; reflex_mul_lane < 4; ++reflex_mul_lane) {
+        float reflex_mul_dst;
+        memcpy(&reflex_mul_dst, &c->xmm[0][reflex_mul_lane], sizeof reflex_mul_dst);
+        const float reflex_mul_rhs = rdf32(reflex_mul_src + 4u * reflex_mul_lane);
+        const float reflex_mul_result = reflex_mul_dst * reflex_mul_rhs;
+        memcpy(&c->xmm[0][reflex_mul_lane], &reflex_mul_result, sizeof reflex_mul_result);
+    }
+}"""
+
+
+def patch_cached_mulps(directory: Path) -> Path:
+    files = sorted(directory.glob("chunk_*.c"))
+    patched = [path for path in files if MULPS_MARKER in path.read_text()]
+    if patched:
+        if len(patched) != 1:
+            raise RuntimeError("multiple Reflex MULPS patches found")
+        return patched[0]
+
+    hits = []
+    for path in files:
+        code = path.read_text()
+        for match in MULPS_TRAP.finditer(code):
+            hits.append((path, code, match))
+    if len(hits) != 1:
+        raise RuntimeError(
+            f"expected exactly one MULPS translation trap at {MULPS_ADDRESS:08x}; "
+            f"found {len(hits)}"
+        )
+    path, code, match = hits[0]
+    path.write_text(code[:match.start()] + MULPS_REPLACEMENT + code[match.end():])
+    return path
+
+
 def main() -> None:
     path = patch_generated_sse(GEN)
     print(f"Patched Reflex CVTPD2PS at {ADDRESS:08x} in {path.name}")
+    mulps_path = patch_cached_mulps(GEN)
+    print(f"Patched Reflex MULPS at {MULPS_ADDRESS:08x} in {mulps_path.name}")
 
 
 if __name__ == "__main__":
