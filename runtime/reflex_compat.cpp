@@ -512,6 +512,17 @@ void crt_strlwr_s(X86 *c) {
     set_eax(c, 0);
 }
 
+// MSVCR90's internal SSE2 math helpers use XMM0 as both argument and
+// return register (not x87 ST(0), and not the normal stack double ABI).
+// Verified against Wine's 32-bit MSVCR implementation and export table.
+void crt_libm_sse2_exp(X86 *c) {
+    xmm_set_f64(c, 0, std::exp(xmm_f64(c, 0)));
+}
+
+void crt_libm_sse2_expf(X86 *c) {
+    xmm_set_f32(c, 0, std::exp(xmm_f32(c, 0)));
+}
+
 void crt_copysign(X86 *c) {
     // MSVCR90.dll!_copysign(double, double) takes two 64-bit stack
     // arguments and returns double in x87 ST(0) on 32-bit Windows.
@@ -2198,6 +2209,8 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "strcpy_s", ARGC_CDECL, crt_strcpy_s},
     {"MSVCR90.dll", "_strlwr_s", ARGC_CDECL, crt_strlwr_s},
     {"MSVCR90.dll", "_copysign", ARGC_CDECL, crt_copysign},
+    {"MSVCR90.dll", "__libm_sse2_exp", ARGC_CDECL, crt_libm_sse2_exp},
+    {"MSVCR90.dll", "__libm_sse2_expf", ARGC_CDECL, crt_libm_sse2_expf},
     {"MSVCR90.dll", "_invalid_parameter_noinfo", ARGC_CDECL,
      crt_invalid_parameter_noinfo},
     {"MSVCR90.dll",
