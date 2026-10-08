@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Patch one proven SSE2 translation trap in the private Reflex cache.
+"""Patch verified SSE2 translation traps in the private Reflex cache.
 
 The baseline is owned by ReflexBuildInput and is never shipped or committed.
 The pinned recomp-kit emits a recomp_unmodelled() abort at 0x007b6d4f for
@@ -156,6 +156,50 @@ def patch_cached_mulps_reg(directory: Path) -> Path:
     return path
 
 
+# The numeric parser's 0x00784eec uses CVTPS2PD XMM0,XMM0. The two
+# lowest source float32 lanes become IEEE double lanes, replacing all 128
+# destination bits. Snapshot both floats before updating either double.
+CVTPS2PD_ADDRESS = 0x00784EEC
+CVTPS2PD_MARKER = "Reflex CVTPS2PD 00784eec"
+CVTPS2PD_TRAP = re.compile(
+    r"\brecomp_unmodelled\s*\(\s*c\s*,\s*0x0*784eecu\s*\)\s*;\s*return\s*;",
+    re.IGNORECASE,
+)
+CVTPS2PD_REPLACEMENT = """{
+    /* Reflex CVTPS2PD 00784eec: xmm0.d[0:2] <- double(xmm0.f[0:2]) */
+    float reflex_ps0;
+    float reflex_ps1;
+    memcpy(&reflex_ps0, &c->xmm[0][0], sizeof reflex_ps0);
+    memcpy(&reflex_ps1, &c->xmm[0][1], sizeof reflex_ps1);
+    const double reflex_pd0 = (double)reflex_ps0;
+    const double reflex_pd1 = (double)reflex_ps1;
+    memcpy(&c->xmm[0][0], &reflex_pd0, sizeof reflex_pd0);
+    memcpy(&c->xmm[0][2], &reflex_pd1, sizeof reflex_pd1);
+}"""
+
+
+def patch_cached_cvtps2pd(directory: Path) -> Path:
+    files = sorted(directory.glob("chunk_*.c"))
+    patched = [path for path in files if CVTPS2PD_MARKER in path.read_text()]
+    if patched:
+        if len(patched) != 1:
+            raise RuntimeError("multiple CVTPS2PD patches found")
+        return patched[0]
+    hits = []
+    for path in files:
+        code = path.read_text()
+        for match in CVTPS2PD_TRAP.finditer(code):
+            hits.append((path, code, match))
+    if len(hits) != 1:
+        raise RuntimeError(
+            f"expected exactly one CVTPS2PD trap at {CVTPS2PD_ADDRESS:08x}; "
+            f"found {len(hits)}"
+        )
+    path, code, match = hits[0]
+    path.write_text(code[:match.start()] + CVTPS2PD_REPLACEMENT + code[match.end():])
+    return path
+
+
 def main() -> None:
     path = patch_generated_sse(GEN)
     print(f"Patched Reflex CVTPD2PS at {ADDRESS:08x} in {path.name}")
@@ -163,6 +207,8 @@ def main() -> None:
     print(f"Patched Reflex MULPS at {MULPS_ADDRESS:08x} in {mulps_path.name}")
     mulps_reg_path = patch_cached_mulps_reg(GEN)
     print(f"Patched Reflex MULPS at {MULPS_REG_ADDRESS:08x} in {mulps_reg_path.name}")
+    cvtps_path = patch_cached_cvtps2pd(GEN)
+    print(f"Patched Reflex CVTPS2PD at {CVTPS2PD_ADDRESS:08x} in {cvtps_path.name}")
 
 
 if __name__ == "__main__":
