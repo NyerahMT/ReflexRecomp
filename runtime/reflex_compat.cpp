@@ -6,6 +6,7 @@
 
 #include "imports.h"
 #include "memory.h"
+#include "reflex_crt_numeric.h"
 
 #include <algorithm>
 #include <atomic>
@@ -823,48 +824,25 @@ void crt_aligned_free(X86 *c) {
 
 void crt_atol(X86 *c) {
     const uint32_t src = arg(c, 0);
-    if (!src) {
-        set_eax(c, 0);
-        return;
-    }
-    const std::string text = gm_str(src, 4096);
-    errno = 0;
-    char *end = nullptr;
-    const long long value = std::strtoll(text.c_str(), &end, 10);
-    int32_t out = 0;
-    if (errno == ERANGE || value > INT32_MAX)
-        out = INT32_MAX;
-    else if (value < INT32_MIN)
-        out = INT32_MIN;
-    else
-        out = static_cast<int32_t>(value);
-    set_eax(c, static_cast<uint32_t>(out));
+    const std::string input = src && gm_valid(src, 1) ? gm_str(src, 4096) : "";
+    set_eax(c, reflex_crt::parse_signed32(input, 10).value);
 }
 
 void crt_strtoul(X86 *c) {
-    const uint32_t src = arg(c, 0);
-    const uint32_t end_out = arg(c, 1);
+    const uint32_t src = arg(c, 0), end_out = arg(c, 1);
     const int base = static_cast<int>(arg(c, 2));
-    if (!src) {
+    if (!src || !gm_valid(src, 1) || !reflex_crt::valid_base(base)) {
         if (end_out && gm_valid(end_out, 4))
-            wr32(end_out, 0);
+            wr32(end_out, src);
         set_eax(c, 0);
         return;
     }
 
-    const std::string text = gm_str(src, 4096);
-    errno = 0;
-    char *end = nullptr;
-    const unsigned long long value = std::strtoull(text.c_str(), &end, base);
-    const size_t consumed =
-        end && end >= text.c_str() ? static_cast<size_t>(end - text.c_str()) : 0;
+    const std::string input = gm_str(src, 4096);
+    const auto result = reflex_crt::parse_unsigned32(input, base);
     if (end_out && gm_valid(end_out, 4))
-        wr32(end_out, src + static_cast<uint32_t>(std::min(consumed, text.size())));
-
-    const uint32_t out =
-        (errno == ERANGE || value > UINT32_MAX) ? UINT32_MAX
-                                                : static_cast<uint32_t>(value);
-    set_eax(c, out);
+        wr32(end_out, src + static_cast<uint32_t>(result.consumed));
+    set_eax(c, result.value);
 }
 
 // All five functions below are cdecl MSVCR90 exports. Import shims never
@@ -874,22 +852,17 @@ void crt_strtoul(X86 *c) {
 void crt_strtol(X86 *c) {
     const uint32_t src = arg(c, 0), end_out = arg(c, 1);
     const int base = static_cast<int>(arg(c, 2));
-    if (!src || !gm_valid(src, 1) || (base != 0 && (base < 2 || base > 36))) {
-        if (end_out && gm_valid(end_out, 4)) wr32(end_out, src);
+    if (!src || !gm_valid(src, 1) || !reflex_crt::valid_base(base)) {
+        if (end_out && gm_valid(end_out, 4))
+            wr32(end_out, src);
         set_eax(c, 0);
         return;
     }
-    const std::string data = gm_str(src, 4096);
-    errno = 0;
-    char *end = nullptr;
-    const long long value = std::strtoll(data.c_str(), &end, base);
-    const size_t consumed = end && end >= data.c_str()
-        ? static_cast<size_t>(end - data.c_str()) : 0;
+    const std::string input = gm_str(src, 4096);
+    const auto result = reflex_crt::parse_signed32(input, base);
     if (end_out && gm_valid(end_out, 4))
-        wr32(end_out, src + static_cast<uint32_t>(std::min(consumed, data.size())));
-    const int32_t result = errno == ERANGE || value > INT32_MAX ? INT32_MAX
-                         : value < INT32_MIN ? INT32_MIN : static_cast<int32_t>(value);
-    set_eax(c, static_cast<uint32_t>(result));
+        wr32(end_out, src + static_cast<uint32_t>(result.consumed));
+    set_eax(c, result.value);
 }
 
 void crt_strtod(X86 *c) {
