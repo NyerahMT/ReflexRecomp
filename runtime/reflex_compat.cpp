@@ -18,6 +18,8 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
+#include <utility>
 
 namespace {
 
@@ -793,6 +795,348 @@ void d3dx_compile_shader_bridge(X86 *c) {
     fprintf(stderr, "[recomp] D3DXCompileShader bridge: entry=%s profile=%s bytes=%u buffer=%08x\\n",
             entry.c_str(), profile.c_str(), size, buffer);
     set_eax(c, 0); // S_OK
+}
+
+// D3DX9 shader constant tables are COM objects which also implement ID3DXBuffer.
+// Keep their vtables and backing metadata in guest memory: the translated x86
+// code dereferences both directly after D3DXGetShaderConstantTable succeeds.
+struct ReflexConstant {
+    uint32_t desc = 0; // stable D3DXHANDLE, points at a guest D3DXCONSTANT_DESC
+    uint32_t name = 0;
+    uint32_t register_set = 0;
+    uint32_t register_index = 0;
+};
+
+struct ReflexConstantTable {
+    uint32_t refs = 1;
+    uint32_t ctab = 0;
+    uint32_t ctab_size = 0;
+    uint32_t creator = 0;
+    uint32_t version = 0;
+    std::vector<ReflexConstant> constants;
+};
+
+std::mutex g_d3dx_ctab_mutex;
+std::unordered_map<uint32_t, ReflexConstantTable> g_d3dx_ctabs;
+uint32_t g_d3dx_ctab_vtable = 0;
+
+constexpr uint32_t kD3dInvalidCall = 0x8876086cu;
+constexpr uint32_t kD3dxInvalidData = 0x88760b59u;
+constexpr uint32_t kNoInterface = 0x80004002u;
+constexpr uint32_t kOutOfMemory = 0x8007000eu;
+
+bool ctab_range(uint32_t size, uint32_t offset, uint32_t bytes) {
+    return offset <= size && bytes <= size - offset;
+}
+
+uint32_t ctab_offset_ptr(uint32_t base, uint32_t size, uint32_t offset) {
+    return offset && ctab_range(size, offset, 1) ? base + offset : 0;
+}
+
+ReflexConstantTable *d3dx_table(uint32_t object) {
+    auto it = g_d3dx_ctabs.find(object);
+    return it == g_d3dx_ctabs.end() ? nullptr : &it->second;
+}
+
+const ReflexConstant *d3dx_constant(const ReflexConstantTable &table, uint32_t handle) {
+    for (const auto &entry : table.constants)
+        if (entry.desc == handle) return &entry;
+    return nullptr;
+}
+
+void d3dx_ctab_query_interface(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const uint32_t self = arg(c, 0), iid = arg(c, 1), out = arg(c, 2);
+    if (!out || !gm_valid(out, 4)) { set_eax(c, kD3dInvalidCall); return; }
+    wr32(out, 0);
+    ReflexConstantTable *table = d3dx_table(self);
+    if (!table || !iid || !gm_valid(iid, 16)) { set_eax(c, kNoInterface); return; }
+    static const uint8_t iid_unknown[16] =
+        {0,0,0,0,0,0,0,0,0xc0,0,0,0,0,0,0,0x46};
+    static const uint8_t iid_ctab[16] =
+        {0x8f,0x75,0x3c,0xab,0x3e,0x09,0x56,0x43,0xb7,0x62,0x4d,0xb1,0x8f,0x1b,0x3a,0x01};
+    if (memcmp(g_mem + iid, iid_unknown, 16) &&
+        memcmp(g_mem + iid, iid_ctab, 16)) {
+        set_eax(c, kNoInterface);
+        return;
+    }
+    ++table->refs;
+    wr32(out, self);
+    set_eax(c, 0);
+}
+
+void d3dx_ctab_addref(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    ReflexConstantTable *table = d3dx_table(arg(c, 0));
+    set_eax(c, table ? ++table->refs : 0);
+}
+
+void d3dx_ctab_release(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const uint32_t self = arg(c, 0);
+    auto it = g_d3dx_ctabs.find(self);
+    if (it == g_d3dx_ctabs.end()) { set_eax(c, 0); return; }
+    if (--it->second.refs) { set_eax(c, it->second.refs); return; }
+    for (const auto &entry : it->second.constants)
+        heap_free(entry.desc);
+    heap_free(it->second.ctab);
+    heap_free(self);
+    g_d3dx_ctabs.erase(it);
+    set_eax(c, 0);
+}
+
+void d3dx_ctab_get_buffer_pointer(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const auto *table = d3dx_table(arg(c, 0));
+    set_eax(c, table ? table->ctab : 0);
+}
+
+void d3dx_ctab_get_buffer_size(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const auto *table = d3dx_table(arg(c, 0));
+    set_eax(c, table ? table->ctab_size : 0);
+}
+
+void d3dx_ctab_get_desc(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const auto *table = d3dx_table(arg(c, 0));
+    const uint32_t out = arg(c, 1);
+    if (!table || !out || !gm_valid(out, 12)) {
+        set_eax(c, kD3dInvalidCall);
+        return;
+    }
+    wr32(out + 0, table->creator);
+    wr32(out + 4, table->version);
+    wr32(out + 8, static_cast<uint32_t>(table->constants.size()));
+    fprintf(stderr, "[reflex-d3dx] ConstantTable::GetDesc version=%08x constants=%zu\n",
+            table->version, table->constants.size());
+    set_eax(c, 0);
+}
+
+void d3dx_ctab_get_constant_desc(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const auto *table = d3dx_table(arg(c, 0));
+    const uint32_t desc = arg(c, 2), count = arg(c, 3);
+    if (!table || !count || !gm_valid(count, 4)) {
+        set_eax(c, kD3dInvalidCall);
+        return;
+    }
+    const auto *entry = d3dx_constant(*table, arg(c, 1));
+    const uint32_t capacity = rd32(count);
+    wr32(count, entry ? 1 : 0);
+    if (!entry || !capacity || !desc || !gm_valid(desc, 48)) {
+        set_eax(c, kD3dInvalidCall);
+        return;
+    }
+    memcpy(g_mem + desc, g_mem + entry->desc, 48);
+    set_eax(c, 0);
+}
+
+void d3dx_ctab_get_sampler_index(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const auto *table = d3dx_table(arg(c, 0));
+    const auto *entry = table ? d3dx_constant(*table, arg(c, 1)) : nullptr;
+    set_eax(c, entry && entry->register_set == 3 ? entry->register_index : 0xffffffffu);
+}
+
+void d3dx_ctab_get_constant(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const auto *table = d3dx_table(arg(c, 0));
+    const uint32_t parent = arg(c, 1), index = arg(c, 2);
+    set_eax(c, table && !parent && index < table->constants.size()
+                   ? table->constants[index].desc : 0);
+}
+
+void d3dx_ctab_get_constant_by_name(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const auto *table = d3dx_table(arg(c, 0));
+    const uint32_t parent = arg(c, 1), name = arg(c, 2);
+    if (!table || parent || !name || !gm_valid(name, 1)) {
+        set_eax(c, 0);
+        return;
+    }
+    const std::string wanted = gm_str(name, 256);
+    for (const auto &entry : table->constants) {
+        if (gm_str(entry.name, 256) == wanted) {
+            set_eax(c, entry.desc);
+            return;
+        }
+    }
+    set_eax(c, 0);
+}
+
+void d3dx_ctab_get_constant_element(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const auto *table = d3dx_table(arg(c, 0));
+    const auto *entry = table ? d3dx_constant(*table, arg(c, 1)) : nullptr;
+    // Scalar/first-element handles are identical. Nested arrays need a
+    // descriptor expansion pass when they are first used by the guest.
+    set_eax(c, entry && arg(c, 2) == 0 ? entry->desc : 0);
+}
+
+void d3dx_ctab_set_unsupported(X86 *c) {
+    // Shader constant writes require forwarding to the host device. Do not
+    // claim a successful render-state update until that bridge exists.
+    set_eax(c, kD3dInvalidCall);
+}
+
+void d3dx_ctab_set_defaults(X86 *c) {
+    // No default values have been applied; explicit setters remain unsupported.
+    set_eax(c, kD3dInvalidCall);
+}
+
+uint32_t d3dx_ctab_vtable() {
+    if (g_d3dx_ctab_vtable && heap_owns(g_d3dx_ctab_vtable))
+        return g_d3dx_ctab_vtable;
+    // ABI from d3dx9shader.h: IUnknown(3), ID3DXBuffer(2), then 20
+    // constant-table methods. Including these two inherited methods is
+    // essential: GetDesc is slot 5, not slot 3.
+    const struct {
+        const char *name;
+        uint8_t argc;
+        void (*fn)(X86 *);
+    } methods[] = {
+        {"QueryInterface", 3, d3dx_ctab_query_interface},
+        {"AddRef", 1, d3dx_ctab_addref},
+        {"Release", 1, d3dx_ctab_release},
+        {"GetBufferPointer", 1, d3dx_ctab_get_buffer_pointer},
+        {"GetBufferSize", 1, d3dx_ctab_get_buffer_size},
+        {"GetDesc", 2, d3dx_ctab_get_desc},
+        {"GetConstantDesc", 4, d3dx_ctab_get_constant_desc},
+        {"GetSamplerIndex", 2, d3dx_ctab_get_sampler_index},
+        {"GetConstant", 3, d3dx_ctab_get_constant},
+        {"GetConstantByName", 3, d3dx_ctab_get_constant_by_name},
+        {"GetConstantElement", 3, d3dx_ctab_get_constant_element},
+        {"SetDefaults", 2, d3dx_ctab_set_defaults},
+        {"SetValue", 5, d3dx_ctab_set_unsupported},
+        {"SetBool", 4, d3dx_ctab_set_unsupported},
+        {"SetBoolArray", 5, d3dx_ctab_set_unsupported},
+        {"SetInt", 4, d3dx_ctab_set_unsupported},
+        {"SetIntArray", 5, d3dx_ctab_set_unsupported},
+        {"SetFloat", 4, d3dx_ctab_set_unsupported},
+        {"SetFloatArray", 5, d3dx_ctab_set_unsupported},
+        {"SetVector", 4, d3dx_ctab_set_unsupported},
+        {"SetVectorArray", 5, d3dx_ctab_set_unsupported},
+        {"SetMatrix", 4, d3dx_ctab_set_unsupported},
+        {"SetMatrixArray", 5, d3dx_ctab_set_unsupported},
+        {"SetMatrixPointerArray", 5, d3dx_ctab_set_unsupported},
+        {"SetMatrixTranspose", 4, d3dx_ctab_set_unsupported},
+        {"SetMatrixTransposeArray", 5, d3dx_ctab_set_unsupported},
+        {"SetMatrixTransposePointerArray", 5, d3dx_ctab_set_unsupported},
+    };
+    static_assert(sizeof(methods) / sizeof(methods[0]) == 27, "D3DX constant-table ABI");
+    const uint32_t vt = heap_alloc(sizeof(methods) / sizeof(methods[0]) * 4, true, 16);
+    if (!vt) return 0;
+    for (uint32_t i = 0; i < sizeof(methods) / sizeof(methods[0]); ++i) {
+        const std::string name = std::string("ID3DXConstantTable::") + methods[i].name;
+        const uint32_t trampoline = imports_alloc_trampoline(
+            "d3dx9_43.dll", name.c_str(), methods[i].fn, methods[i].argc);
+        if (!trampoline) { heap_free(vt); return 0; }
+        wr32(vt + 4 * i, trampoline);
+    }
+    g_d3dx_ctab_vtable = vt;
+    return vt;
+}
+
+// Locate the CTAB shader comment and copy it to owned guest memory. CTAB
+// offsets are byte offsets relative to its 28-byte header, not the shader.
+bool d3dx_parse_ctab(uint32_t bytecode, ReflexConstantTable &table) {
+    if (!bytecode || !gm_valid(bytecode, 4)) return false;
+    const uint32_t version = rd32(bytecode);
+    if ((version >> 16) != 0xfffeu && (version >> 16) != 0xffffu)
+        return false;
+
+    for (uint32_t i = 1; i < 65536; ++i) {
+        const uint64_t pos64 = uint64_t(bytecode) + uint64_t(i) * 4;
+        if (pos64 > 0xffffffffu || !gm_valid(static_cast<uint32_t>(pos64), 4))
+            return false;
+        const uint32_t pos = static_cast<uint32_t>(pos64);
+        const uint32_t token = rd32(pos);
+        if (token == 0xffffu) return false; // D3DSIO_END
+        if ((token & 0xffffu) != 0xfffeu) continue; // D3DSIO_COMMENT
+        const uint32_t count = (token >> 16) & 0x7fffu;
+        if (!count || uint64_t(i) + count >= 65536 ||
+            !gm_valid(pos + 4, count * 4)) return false;
+        if (rd32(pos + 4) != 0x42415443u) { i += count; continue; } // 'CTAB'
+        const uint32_t src = pos + 8, size = (count - 1) * 4;
+        if (size < 28 || !gm_valid(src, size) || rd32(src) != 28) return false;
+        const uint32_t constants = rd32(src + 12);
+        const uint32_t info_offset = rd32(src + 16);
+        if (constants > 4096 || !ctab_range(size, info_offset, constants * 20))
+            return false;
+        table.ctab = heap_alloc(size, false, 16);
+        if (!table.ctab) return false;
+        memcpy(g_mem + table.ctab, g_mem + src, size);
+        table.ctab_size = size;
+        table.version = rd32(table.ctab + 8);
+        table.creator = ctab_offset_ptr(table.ctab, size, rd32(table.ctab + 4));
+        if (table.creator && !memchr(g_mem + table.creator, 0,
+                                    size - (table.creator - table.ctab))) return false;
+        for (uint32_t j = 0; j < constants; ++j) {
+            const uint32_t info = table.ctab + info_offset + 20 * j;
+            const uint32_t name = ctab_offset_ptr(table.ctab, size, rd32(info));
+            const uint32_t type_offset = rd32(info + 12);
+            const uint32_t default_value = ctab_offset_ptr(table.ctab, size, rd32(info + 16));
+            if (!name || !memchr(g_mem + name, 0, size - (name - table.ctab)) ||
+                !ctab_range(size, type_offset, 16)) return false;
+            const uint32_t type = table.ctab + type_offset;
+            ReflexConstant entry;
+            entry.desc = heap_alloc(48, true, 16);
+            if (!entry.desc) return false;
+            entry.name = name;
+            entry.register_set = rd16(info + 4);
+            entry.register_index = rd16(info + 6);
+            // D3DXCONSTANT_DESC is twelve 32-bit words on x86.
+            const uint32_t rows = rd16(type + 4), cols = rd16(type + 6);
+            const uint32_t elements = std::max<uint32_t>(1, rd16(type + 8));
+            wr32(entry.desc + 0, name);
+            wr32(entry.desc + 4, entry.register_set);
+            wr32(entry.desc + 8, entry.register_index);
+            wr32(entry.desc + 12, rd16(info + 8));
+            wr32(entry.desc + 16, rd16(type + 0));
+            wr32(entry.desc + 20, rd16(type + 2));
+            wr32(entry.desc + 24, rows);
+            wr32(entry.desc + 28, cols);
+            wr32(entry.desc + 32, elements);
+            wr32(entry.desc + 36, rd16(type + 10));
+            wr32(entry.desc + 40, 4u * rows * cols * elements);
+            wr32(entry.desc + 44, default_value);
+            table.constants.push_back(entry);
+        }
+        return true;
+    }
+    return false;
+}
+
+void d3dx_get_shader_constant_table(X86 *c) {
+    const uint32_t shader = arg(c, 0), out = arg(c, 1);
+    if (!out || !gm_valid(out, 4)) { set_eax(c, kD3dInvalidCall); return; }
+    wr32(out, 0);
+    ReflexConstantTable table;
+    if (!d3dx_parse_ctab(shader, table)) {
+        for (const auto &entry : table.constants) heap_free(entry.desc);
+        if (table.ctab) heap_free(table.ctab);
+        fprintf(stderr, "[reflex-d3dx] D3DXGetShaderConstantTable: invalid/missing CTAB at %08x\n", shader);
+        set_eax(c, kD3dxInvalidData);
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
+    const uint32_t vtable = d3dx_ctab_vtable();
+    const uint32_t object = heap_alloc(4, true, 16);
+    if (!vtable || !object) {
+        if (object) heap_free(object);
+        for (const auto &entry : table.constants) heap_free(entry.desc);
+        heap_free(table.ctab);
+        set_eax(c, kOutOfMemory);
+        return;
+    }
+    wr32(object, vtable);
+    wr32(out, object);
+    const uint32_t n = static_cast<uint32_t>(table.constants.size());
+    g_d3dx_ctabs.emplace(object, std::move(table));
+    fprintf(stderr, "[reflex-d3dx] D3DXGetShaderConstantTable: shader=%08x object=%08x constants=%u\n",
+            shader, object, n);
+    set_eax(c, 0);
 }
 
 void fmod_ok(X86 *c) {
@@ -1708,6 +2052,7 @@ const ImportShim k_reflex_shims[] = {
     // Reached external middleware imports. Model the ABI and fail explicitly
     // when the host does not yet provide the underlying service.
     {"d3dx9_43.dll", "D3DXCompileShader", 10, d3dx_compile_shader_bridge},
+    {"d3dx9_43.dll", "D3DXGetShaderConstantTable", 2, d3dx_get_shader_constant_table},
     {"fmodexL.dll", "FMOD_Debug_SetLevel", 1, fmod_ok},
     {"fmodexL.dll", "FMOD_Memory_Initialize", 6, fmod_ok},
     {"fmod_eventL.dll", "_FMOD_EventSystem_Create@4", 1,
