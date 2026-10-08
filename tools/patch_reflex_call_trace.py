@@ -56,6 +56,23 @@ def main():
                 c->r[R_EDX], c->r[R_ESI], c->r[R_EDI]);
     }
 
+    if (target == 0x0084a890u) {
+        // This virtual resource lookup searches UI data by key. Direct
+        // cross-references cannot identify its callers; sample the guest
+        // return site and two x86 stack arguments on power-of-two calls.
+        static uint64_t reflex_ui_lookup_calls = 0;
+        const uint64_t ui_n =
+            __atomic_add_fetch(&reflex_ui_lookup_calls, 1, __ATOMIC_RELAXED);
+        if ((ui_n & (ui_n - 1)) == 0) {
+            fprintf(stderr,
+                    "[reflex-ui-lookup] call=%llu ret=%08x this=%08x "
+                    "arg0=%08x arg1=%08x eax=%08x esi=%08x edi=%08x\n",
+                    (unsigned long long)ui_n, trace_ret, c->r[R_ECX],
+                    rd32(trace_esp + 4), rd32(trace_esp + 8),
+                    c->r[R_EAX], c->r[R_ESI], c->r[R_EDI]);
+        }
+    }
+
     if (target == 0x008fa06au) {
         fprintf(stderr,
                 "[recomp] reflex frontier trace v2: memset thunk ret=%08x esp=%08x "
