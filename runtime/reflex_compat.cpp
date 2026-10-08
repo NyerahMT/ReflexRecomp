@@ -634,6 +634,97 @@ void crt_strtoul(X86 *c) {
     set_eax(c, out);
 }
 
+// All five functions below are cdecl MSVCR90 exports. Import shims never
+// modify the guest ESP; the dispatcher pops only the return address. The
+// floating-point conversion functions return their double in x87 ST(0),
+// not EAX (unlike the integer parsers).
+void crt_strtol(X86 *c) {
+    const uint32_t src = arg(c, 0), end_out = arg(c, 1);
+    const int base = static_cast<int>(arg(c, 2));
+    if (!src || !gm_valid(src, 1) || (base != 0 && (base < 2 || base > 36))) {
+        if (end_out && gm_valid(end_out, 4)) wr32(end_out, src);
+        set_eax(c, 0);
+        return;
+    }
+    const std::string data = gm_str(src, 4096);
+    errno = 0;
+    char *end = nullptr;
+    const long long value = std::strtoll(data.c_str(), &end, base);
+    const size_t consumed = end && end >= data.c_str()
+        ? static_cast<size_t>(end - data.c_str()) : 0;
+    if (end_out && gm_valid(end_out, 4))
+        wr32(end_out, src + static_cast<uint32_t>(std::min(consumed, data.size())));
+    const int32_t result = errno == ERANGE || value > INT32_MAX ? INT32_MAX
+                         : value < INT32_MIN ? INT32_MIN : static_cast<int32_t>(value);
+    set_eax(c, static_cast<uint32_t>(result));
+}
+
+void crt_strtod(X86 *c) {
+    const uint32_t src = arg(c, 0), end_out = arg(c, 1);
+    if (!src || !gm_valid(src, 1)) {
+        if (end_out && gm_valid(end_out, 4)) wr32(end_out, src);
+        fpush(c, 0.0);
+        return;
+    }
+    const std::string data = gm_str(src, 4096);
+    errno = 0;
+    char *end = nullptr;
+    const double result = std::strtod(data.c_str(), &end);
+    const size_t consumed = end && end >= data.c_str()
+        ? static_cast<size_t>(end - data.c_str()) : 0;
+    if (end_out && gm_valid(end_out, 4))
+        wr32(end_out, src + static_cast<uint32_t>(std::min(consumed, data.size())));
+    fpush(c, result);
+}
+
+void crt_atof(X86 *c) {
+    const uint32_t src = arg(c, 0);
+    const std::string data = src && gm_valid(src, 1) ? gm_str(src, 4096) : "";
+    fpush(c, std::strtod(data.c_str(), nullptr));
+}
+
+void crt_strcspn(X86 *c) {
+    const uint32_t src = arg(c, 0), reject = arg(c, 1);
+    if (!src || !reject || !gm_valid(src, 1) || !gm_valid(reject, 1)) {
+        set_eax(c, 0);
+        return;
+    }
+    const std::string hay = gm_str(src, 0x100000);
+    const std::string chars = gm_str(reject, 0x100000);
+    const size_t pos = hay.find_first_of(chars);
+    set_eax(c, static_cast<uint32_t>(pos == std::string::npos ? hay.size() : pos));
+}
+
+// VS2008's struct lconv begins with ten x86 char* fields followed by
+// one-byte format codes. Host pointers are never exposed to guest code.
+std::mutex g_crt_locale_mutex;
+uint32_t g_crt_locale = 0;
+void crt_localeconv(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_crt_locale_mutex);
+    if (!g_crt_locale || !heap_owns(g_crt_locale)) {
+        const uint32_t block = heap_alloc(64, true, 16);
+        const uint32_t point = heap_alloc(2, true, 16);
+        const uint32_t empty = heap_alloc(1, true, 16);
+        if (!block || !point || !empty) {
+            if (block) heap_free(block);
+            if (point) heap_free(point);
+            if (empty) heap_free(empty);
+            set_eax(c, 0);
+            return;
+        }
+        g_mem[point] = '.';
+        g_mem[point + 1] = 0;
+        g_mem[empty] = 0;
+        // decimal_point + 9 additional pointers: all empty in the C locale.
+        wr32(block, point);
+        for (unsigned i = 1; i < 10; ++i) wr32(block + i * 4, empty);
+        // CHAR_MAX denotes an unavailable international monetary field.
+        memset(g_mem + block + 40, 0x7f, 24);
+        g_crt_locale = block;
+    }
+    set_eax(c, g_crt_locale);
+}
+
 void crt_pointer_identity(X86 *c) {
     set_eax(c, arg(c, 0));
 }
@@ -2063,6 +2154,12 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "ispunct", ARGC_CDECL, crt_ispunct},
     {"MSVCR90.dll", "atol", ARGC_CDECL, crt_atol},
     {"MSVCR90.dll", "strtoul", ARGC_CDECL, crt_strtoul},
+    {"MSVCR90.dll", "strtol", ARGC_CDECL, crt_strtol},
+    {"MSVCR90.dll", "strtod", ARGC_CDECL, crt_strtod},
+    {"MSVCR90.dll", "atof", ARGC_CDECL, crt_atof},
+    {"MSVCR90.dll", "strcspn", ARGC_CDECL, crt_strcspn},
+    {"MSVCR90.dll", "localeconv", ARGC_CDECL, crt_localeconv},
+
     {"MSVCR90.dll", "_aligned_malloc", ARGC_CDECL, crt_aligned_malloc},
     {"MSVCR90.dll", "_aligned_realloc", ARGC_CDECL, crt_aligned_realloc},
     {"MSVCR90.dll", "_aligned_free", ARGC_CDECL, crt_aligned_free},
