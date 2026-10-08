@@ -545,6 +545,44 @@ bool rtti_type_equal(uint32_t left, uint32_t right) {
     return !a.empty() && a == b;
 }
 
+// MSVCR90 _setjmp3 stores the x86 nonvolatile registers, caller ESP and
+// return EIP in its 64-byte jmp_buf, followed by the SEH registration and
+// optional unwind metadata. Saving the context is important: reporting
+// success while leaving jmp_buf uninitialized corrupts a later longjmp.
+void crt_setjmp3(X86 *c) {
+    const uint32_t jmp = arg(c, 0);
+    const uint32_t count = arg(c, 1);
+    if (!jmp || !gm_valid(jmp, 64) || count > 64u) {
+        set_eax(c, static_cast<uint32_t>(EINVAL));
+        return;
+    }
+    wr32(jmp + 0u, c->r[R_EBP]);
+    wr32(jmp + 4u, c->r[R_EBX]);
+    wr32(jmp + 8u, c->r[R_EDI]);
+    wr32(jmp + 12u, c->r[R_ESI]);
+    wr32(jmp + 16u, c->r[R_ESP]);
+    wr32(jmp + 20u, gm_valid(c->r[R_ESP], 4) ? rd32(c->r[R_ESP]) : 0);
+    const uint32_t registration =
+        gm_valid(c->fs_base, 4) ? rd32(c->fs_base) : 0xffffffffu;
+    wr32(jmp + 24u, registration);
+    uint32_t try_level = 0xffffffffu;
+    if (registration != 0xffffffffu && registration &&
+        gm_valid(registration + 12u, 4))
+        try_level = rd32(registration + 12u);
+    wr32(jmp + 28u, count > 1 ? arg(c, 3) : try_level);
+    wr32(jmp + 32u, 0x56433230u); // MSVCRT_JMP_MAGIC
+    wr32(jmp + 36u, count ? arg(c, 2) : 0u);
+    for (uint32_t i = 0; i < 6; ++i)
+        wr32(jmp + 40u + 4u * i, count > i + 2 ? arg(c, 4 + i) : 0u);
+    set_eax(c, 0);
+}
+
+void crt_debugger_hook(X86 *c) {
+    // _crt_debugger_hook(int) is a debugger integration hook, not a
+    // program-control or math operation. No debugger is attached.
+    set_eax(c, 0);
+}
+
 void crt_rt_dynamic_cast(X86 *c) {
     const uint32_t input = arg(c, 0);
     const int32_t vf_delta = static_cast<int32_t>(arg(c, 1));
@@ -2309,6 +2347,8 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "__libm_sse2_exp", ARGC_CDECL, crt_libm_sse2_exp},
     {"MSVCR90.dll", "__libm_sse2_expf", ARGC_CDECL, crt_libm_sse2_expf},
     {"MSVCR90.dll", "__RTDynamicCast", ARGC_CDECL, crt_rt_dynamic_cast},
+    {"MSVCR90.dll", "_setjmp3", ARGC_CDECL, crt_setjmp3},
+    {"MSVCR90.dll", "_crt_debugger_hook", ARGC_CDECL, crt_debugger_hook},
     {"MSVCR90.dll", "_invalid_parameter_noinfo", ARGC_CDECL,
      crt_invalid_parameter_noinfo},
     {"MSVCR90.dll",
