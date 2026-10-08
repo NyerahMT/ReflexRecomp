@@ -131,6 +131,24 @@ jobs:
             -d "$RUNNER_TEMP/reflex-game/Database"
           rm -f "$RUNNER_TEMP/reflex-assets/Archive.4.zip"
 
+          # The base MXUI database is in Archive.4, but its corresponding
+          # MXUI.dx9.package is in private Archive.3. Missing it caused
+          # fopen to fail during menu initialization and a nil virtual call
+          # at guest return site 0x0080fc3c. Extract exactly this file,
+          # not an unrelated substitute; the original stays in the private
+          # input repository and is never committed or uploaded as an artifact.
+          gh release download "$INPUT_TAG" \
+            --repo "$INPUT_REPO" \
+            --pattern "Archive.3.zip" \
+            --dir "$RUNNER_TEMP/reflex-assets" \
+            --clobber
+          test -s "$RUNNER_TEMP/reflex-assets/Archive.3.zip"
+          unzip -p "$RUNNER_TEMP/reflex-assets/Archive.3.zip" \
+            'MXUI.dx9.package' \
+            > "$RUNNER_TEMP/reflex-game/Database/MXUI.dx9.package"
+          test -s "$RUNNER_TEMP/reflex-game/Database/MXUI.dx9.package"
+          rm -f "$RUNNER_TEMP/reflex-assets/Archive.3.zip"
+
           test -s "$RUNNER_TEMP/reflex-game/Database/MXUI.dx9.database"
           test -s "$RUNNER_TEMP/reflex-game/Database/EngineDependencies.dx9.package"
           if [[ ! -s "$RUNNER_TEMP/reflex-game/Database/EngineDependencies.dx9.database" ]]; then
