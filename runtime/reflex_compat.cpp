@@ -2190,6 +2190,30 @@ void msvcp_string_less(X86 *c) {
     set_eax(c, msvcp_string_compare(arg(c, 0), arg(c, 1)) < 0 ? 1u : 0u);
 }
 
+// MSVC 2008 x86 basic_string<char>::swap(basic_string&) is a thiscall:
+// ECX is 'this', and the other string is the one callee-cleaned stack
+// argument. The 24-byte representation consists of a 16-byte SSO or heap
+// pointer union and 32-bit size and capacity fields. Swapping complete
+// representations transfers any owned heap allocation without copying it,
+// and also handles the inline/heap combination correctly.
+void msvcp_string_swap(X86 *c) {
+    const uint32_t self = c->r[R_ECX];
+    const uint32_t other = arg(c, 0);
+    if (!self || !other || !gm_valid(self, 24) || !gm_valid(other, 24)) {
+        fprintf(stderr, "[reflex-msvcp] basic_string::swap invalid operands this=%08x other=%08x\n",
+                self, other);
+        set_eax(c, 0);
+        return;
+    }
+    if (self != other) {
+        uint8_t temporary[24];
+        memcpy(temporary, g_mem + self, 24);
+        memcpy(g_mem + self, g_mem + other, 24);
+        memcpy(g_mem + other, temporary, 24);
+    }
+    set_eax(c, 0);
+}
+
 void msvcp_string_dtor(X86 *c) {
     const uint32_t self = c->r[R_ECX];
     if (self && gm_valid(self, 24)) {
@@ -2443,6 +2467,10 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCP90.dll",
      "?resize@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEXI@Z",
      1, msvcp_string_resize},
+    {"MSVCP90.dll",
+     "?swap@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEXAAV12@@Z",
+     1, msvcp_string_swap},
+
     {"MSVCP90.dll",
      "??4?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEAAV01@PBD@Z",
      1, msvcp_string_assign_cstr},
