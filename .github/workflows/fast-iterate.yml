@@ -16,6 +16,7 @@ on:
       - "tools/patch_reflex_d3d9_shaders.py"
       - "tools/patch_reflex_sse.py"
       - "tools/patch_reflex_cached_sse.py"
+      - "tools/patch_reflex_cached_simd.py"
       - "tools/audit_translation_traps.py"
       - "tools/check_reflex_boot_progress.py"
       - "tools/patch_reflex_interp.py"
@@ -199,6 +200,7 @@ jobs:
         run: |
           python3 tools/patch_reflex_call_trace.py
           python3 tools/patch_reflex_cached_sse.py
+          python3 tools/patch_reflex_cached_simd.py
 
       # Record *all* still-untranslated opcodes for preventative fixes.
       # This is diagnostic only; an unreachable trap is not a boot failure.
