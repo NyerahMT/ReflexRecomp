@@ -944,16 +944,39 @@ void crt_srand(X86 *c) {
     set_eax(c, 0);
 }
 
+// IUnknown and D3DX9 GUIDs in little-endian x86 memory order.
+// IID_ID3DXConstantTable changes at SDK 43; this DLL uses the SDK 43 IID.
+// The table also inherits ID3DXBuffer and therefore supports that IID.
+static const uint8_t kIidIUnknown[16] =
+    {0,0,0,0,0,0,0,0,0xc0,0,0,0,0,0,0,0x46};
+static const uint8_t kIidD3dxBuffer[16] =
+    {0x08,0xfb,0xa5,0x8b,0x95,0x51,0xe2,0x40,0xac,0x58,0x0d,0x98,0x9c,0x3a,0x01,0x02};
+static const uint8_t kIidD3dxConstantTable43[16] =
+    {0x8f,0x75,0x3c,0xab,0x3e,0x09,0x56,0x43,0xb7,0x62,0x4d,0xb1,0x8f,0x1b,0x3a,0x01};
+
+bool d3dx_supported_iid(uint32_t iid, bool constant_table) {
+    if (!iid || !gm_valid(iid, 16))
+        return false;
+    return memcmp(g_mem + iid, kIidIUnknown, 16) == 0 ||
+           memcmp(g_mem + iid, kIidD3dxBuffer, 16) == 0 ||
+           (constant_table &&
+            memcmp(g_mem + iid, kIidD3dxConstantTable43, 16) == 0);
+}
+
 uint32_t g_d3dx_buffer_vtable = 0;
 
 void d3dx_buffer_query_interface(X86 *c) {
-    const uint32_t self = arg(c, 0);
-    const uint32_t out = arg(c, 2);
-    if (!self || !gm_valid(self, 16) || !out || !gm_valid(out, 4)) {
+    const uint32_t self = arg(c, 0), iid = arg(c, 1), out = arg(c, 2);
+    if (!out || !gm_valid(out, 4)) {
         set_eax(c, 0x80004003u); // E_POINTER
         return;
     }
-    uint32_t refs = rd32(self + 4);
+    wr32(out, 0);
+    if (!self || !gm_valid(self, 16) || !d3dx_supported_iid(iid, false)) {
+        set_eax(c, 0x80004002u); // E_NOINTERFACE
+        return;
+    }
+    const uint32_t refs = rd32(self + 4);
     if (refs != UINT32_MAX)
         wr32(self + 4, refs + 1);
     wr32(out, self);
@@ -1144,20 +1167,18 @@ const ReflexConstant *d3dx_constant(const ReflexConstantTable &table, uint32_t h
 void d3dx_ctab_query_interface(X86 *c) {
     std::lock_guard<std::mutex> lock(g_d3dx_ctab_mutex);
     const uint32_t self = arg(c, 0), iid = arg(c, 1), out = arg(c, 2);
-    if (!out || !gm_valid(out, 4)) { set_eax(c, kD3dInvalidCall); return; }
+    if (!out || !gm_valid(out, 4)) {
+        set_eax(c, 0x80004003u); // E_POINTER
+        return;
+    }
     wr32(out, 0);
     ReflexConstantTable *table = d3dx_table(self);
-    if (!table || !iid || !gm_valid(iid, 16)) { set_eax(c, kNoInterface); return; }
-    static const uint8_t iid_unknown[16] =
-        {0,0,0,0,0,0,0,0,0xc0,0,0,0,0,0,0,0x46};
-    static const uint8_t iid_ctab[16] =
-        {0x8f,0x75,0x3c,0xab,0x3e,0x09,0x56,0x43,0xb7,0x62,0x4d,0xb1,0x8f,0x1b,0x3a,0x01};
-    if (memcmp(g_mem + iid, iid_unknown, 16) &&
-        memcmp(g_mem + iid, iid_ctab, 16)) {
+    if (!table || !d3dx_supported_iid(iid, true)) {
         set_eax(c, kNoInterface);
         return;
     }
-    ++table->refs;
+    if (table->refs != UINT32_MAX)
+        ++table->refs;
     wr32(out, self);
     set_eax(c, 0);
 }
