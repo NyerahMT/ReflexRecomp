@@ -523,6 +523,103 @@ void crt_libm_sse2_expf(X86 *c) {
     xmm_set_f32(c, 0, std::exp(xmm_f32(c, 0)));
 }
 
+// MSVC x86 RTTI uses absolute guest pointers (unlike x64's relative RVAs).
+// The vfptr[-1] locator names the complete type and its base class table.
+// Support unambiguous, public, nonvirtual or virtual base conversions without
+// guessing an object when metadata is absent. A pointer cast legitimately
+// returns null on mismatch. Reference bad_cast exceptions are not yet bridged.
+bool rtti_add(uint32_t base, int64_t delta, uint32_t &out) {
+    const int64_t value = static_cast<int64_t>(base) + delta;
+    if (value < 0x10000 || value >= static_cast<int64_t>(0x10000000u))
+        return false;
+    out = static_cast<uint32_t>(value);
+    return true;
+}
+
+bool rtti_type_equal(uint32_t left, uint32_t right) {
+    if (left == right) return left != 0;
+    if (!left || !right || !gm_valid(left + 8u, 1) ||
+        !gm_valid(right + 8u, 1)) return false;
+    const std::string a = gm_str(left + 8u, 256);
+    const std::string b = gm_str(right + 8u, 256);
+    return !a.empty() && a == b;
+}
+
+void crt_rt_dynamic_cast(X86 *c) {
+    const uint32_t input = arg(c, 0);
+    const int32_t vf_delta = static_cast<int32_t>(arg(c, 1));
+    const uint32_t source = arg(c, 2), target = arg(c, 3);
+    const bool reference = arg(c, 4) != 0;
+    uint32_t result = 0, vf_at = 0, complete = 0;
+    uint32_t col = 0, hierarchy = 0, count = 0;
+
+    if (input && source && target && rtti_type_equal(source, target)) {
+        // Identity casts never require moving the pointer.
+        result = input;
+    } else if (input && source && target &&
+               rtti_add(input, vf_delta, vf_at) && gm_valid(vf_at, 4)) {
+        const uint32_t vtable = rd32(vf_at);
+        if (vtable >= 0x10004u && gm_valid(vtable - 4u, 4))
+            col = rd32(vtable - 4u);
+        if (col && gm_valid(col, 20) && rd32(col) == 0u &&
+            rd32(col + 4u) < 0x100000u &&
+            rtti_add(vf_at, -static_cast<int64_t>(rd32(col + 4u)), complete)) {
+            hierarchy = rd32(col + 16u);
+            if (hierarchy && gm_valid(hierarchy, 16)) {
+                count = rd32(hierarchy + 8u);
+                const uint32_t bases = rd32(hierarchy + 12u);
+                if (count > 0 && count <= 2048 &&
+                    bases && gm_valid(bases, count * 4u)) {
+                    bool source_found = false;
+                    bool target_found = false;
+                    bool ambiguous = false;
+                    uint32_t candidate = 0;
+                    for (uint32_t i = 0; i < count; ++i) {
+                        const uint32_t base = rd32(bases + i * 4u);
+                        if (!base || !gm_valid(base, 24)) continue;
+                        const uint32_t type = rd32(base);
+                        if (rtti_type_equal(type, source)) source_found = true;
+                        if (!rtti_type_equal(type, target)) continue;
+                        const uint32_t attributes = rd32(base + 20u);
+                        // Not visible, ambiguous, and private/protected base
+                        // descriptors cannot supply an accessible cast.
+                        if (attributes & 0x0fu) continue;
+                        const int32_t mdisp = static_cast<int32_t>(rd32(base + 8u));
+                        const int32_t pdisp = static_cast<int32_t>(rd32(base + 12u));
+                        const int32_t vdisp = static_cast<int32_t>(rd32(base + 16u));
+                        uint32_t address = 0;
+                        if (!rtti_add(complete, mdisp, address)) continue;
+                        if (pdisp != -1) {
+                            uint32_t vbptr_addr = 0, vbindex = 0;
+                            if (!rtti_add(complete, pdisp, vbptr_addr) ||
+                                !gm_valid(vbptr_addr, 4)) continue;
+                            const uint32_t vbtable = rd32(vbptr_addr);
+                            if (!rtti_add(vbtable, vdisp, vbindex) ||
+                                !gm_valid(vbindex, 4)) continue;
+                            const int32_t vb_adjust =
+                                static_cast<int32_t>(rd32(vbindex));
+                            if (!rtti_add(address, vb_adjust, address)) continue;
+                        }
+                        if (!gm_valid(address, 1)) continue;
+                        if (target_found && candidate != address) ambiguous = true;
+                        candidate = address;
+                        target_found = true;
+                    }
+                    if (source_found && target_found && !ambiguous)
+                        result = candidate;
+                }
+            }
+        }
+    }
+    fprintf(stderr,
+            "[reflex-rtti] __RTDynamicCast input=%08x vfdelta=%d source=%08x target=%08x ref=%u col=%08x hierarchy=%08x bases=%u complete=%08x result=%08x\n",
+            input, vf_delta, source, target, reference ? 1u : 0u,
+            col, hierarchy, count, complete, result);
+    if (reference && !result)
+        fprintf(stderr, "[reflex-rtti] reference bad_cast still unsupported\n");
+    set_eax(c, result);
+}
+
 void crt_copysign(X86 *c) {
     // MSVCR90.dll!_copysign(double, double) takes two 64-bit stack
     // arguments and returns double in x87 ST(0) on 32-bit Windows.
@@ -2211,6 +2308,7 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "_copysign", ARGC_CDECL, crt_copysign},
     {"MSVCR90.dll", "__libm_sse2_exp", ARGC_CDECL, crt_libm_sse2_exp},
     {"MSVCR90.dll", "__libm_sse2_expf", ARGC_CDECL, crt_libm_sse2_expf},
+    {"MSVCR90.dll", "__RTDynamicCast", ARGC_CDECL, crt_rt_dynamic_cast},
     {"MSVCR90.dll", "_invalid_parameter_noinfo", ARGC_CDECL,
      crt_invalid_parameter_noinfo},
     {"MSVCR90.dll",
