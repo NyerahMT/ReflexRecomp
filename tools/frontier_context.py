@@ -254,6 +254,10 @@ def main():
     names = load_names(args.listing_root)
     if args.quick:
         print_callers(args.listing_root, "0x00883ab2", 100)
+        # Trace the UI resource lookup that repeatedly requests Intro/Intro.
+        print_callers(args.listing_root, "0x0084a890", 60)
+        print_callers(args.listing_root, "0x0084a7f0", 60)
+        print_function_strings(args.listing_root, ["0084a890", "0084a7f0", "0084a950"])
         print_literal_xrefs(args.listing_root, "0x00d67ce8", 120)
         print_literal_xrefs(args.listing_root, "0x00d67cec", 120)
         print_literal_xrefs(args.listing_root, "0x00d67fd0", 120)
