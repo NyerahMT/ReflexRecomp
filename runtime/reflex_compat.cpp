@@ -108,43 +108,51 @@ void crt_strncpy(X86 *c) {
     set_eax(c, dst);
 }
 
-int ascii_icmp(const std::string &a, const std::string &b) {
-    const size_t common = a.size() < b.size() ? a.size() : b.size();
+// A hot resource-name lookup performs millions of MSVCR90 _stricmp calls.
+// Compare directly in the guest arena rather than allocating two std::strings
+// for every call. Match gm_str's 32 KiB bound and empty-string behavior for
+// null/out-of-arena pointers; use unsigned chars before host tolower().
+int guest_ascii_icmp(uint32_t lhs, uint32_t rhs) {
+    constexpr size_t max_string = 0x8000u;
+    const size_t n_l = lhs < GUEST_SIZE
+        ? std::min<size_t>(max_string, GUEST_SIZE - lhs) : 0u;
+    const size_t n_r = rhs < GUEST_SIZE
+        ? std::min<size_t>(max_string, GUEST_SIZE - rhs) : 0u;
+    const size_t common = std::min(n_l, n_r);
     for (size_t i = 0; i < common; ++i) {
-        const int ac = std::tolower(static_cast<unsigned char>(a[i]));
-        const int bc = std::tolower(static_cast<unsigned char>(b[i]));
-        if (ac < bc)
-            return -1;
-        if (ac > bc)
-            return 1;
+        const unsigned char a = g_mem[lhs + i];
+        const unsigned char b = g_mem[rhs + i];
+        if (!a || !b)
+            return a == b ? 0 : (!a ? -1 : 1);
+        const int ac = std::tolower(a);
+        const int bc = std::tolower(b);
+        if (ac != bc) return ac < bc ? -1 : 1;
     }
-    if (a.size() < b.size())
-        return -1;
-    if (a.size() > b.size())
-        return 1;
-    return 0;
+    if (n_l == n_r) return 0;
+    // Either read ran into the end of the guest arena or the other pointer
+    // was invalid, which gm_str treats as a zero-length string.
+    const unsigned char next_a = common < n_l ? g_mem[lhs + common] : 0u;
+    const unsigned char next_b = common < n_r ? g_mem[rhs + common] : 0u;
+    return next_a == next_b ? 0 : (!next_a ? -1 : 1);
 }
 
 void crt_stricmp(X86 *c) {
     const uint32_t left_ptr = arg(c, 0), right_ptr = arg(c, 1);
-    const std::string left = gm_str(left_ptr);
-    const std::string right = gm_str(right_ptr);
-    const int rc = ascii_icmp(left, right);
+    const int rc = guest_ascii_icmp(left_ptr, right_ptr);
     const uint32_t ret = gm_valid(c->r[R_ESP], 4) ? rd32(c->r[R_ESP]) : 0u;
     if (ret == 0x0084a8f0u) {
-        // An observed hot loop repeatedly calls _stricmp from this
-        // guest map-lookup site. Power-of-two sampling captures whether
-        // the keys/pointers change without emitting multi-gigabyte logs.
+        // Keep power-of-two samples for diagnosing the current UI lookup
+        // loop, but only materialize names when a sample is emitted.
         static std::atomic<uint64_t> count{0};
         const uint64_t n = count.fetch_add(1, std::memory_order_relaxed) + 1;
         if ((n & (n - 1)) == 0) {
+            const std::string left = gm_str(left_ptr, 64);
+            const std::string right = gm_str(right_ptr, 64);
             fprintf(stderr,
-                    "[reflex-stricmp] call=%llu ret=%08x lhs=%08x \"%.*s\" rhs=%08x \"%.*s\" rc=%d esi=%08x edi=%08x ebx=%08x ecx=%08x\n",
+                    "[reflex-stricmp] call=%llu ret=%08x lhs=%08x \"%s\" rhs=%08x \"%s\" rc=%d esi=%08x edi=%08x ebx=%08x ecx=%08x\n",
                     static_cast<unsigned long long>(n), ret, left_ptr,
-                    static_cast<int>(std::min<size_t>(left.size(), 64)), left.c_str(),
-                    right_ptr, static_cast<int>(std::min<size_t>(right.size(), 64)),
-                    right.c_str(), rc, c->r[R_ESI], c->r[R_EDI], c->r[R_EBX],
-                    c->r[R_ECX]);
+                    left.c_str(), right_ptr, right.c_str(), rc,
+                    c->r[R_ESI], c->r[R_EDI], c->r[R_EBX], c->r[R_ECX]);
         }
     }
     set_eax(c, static_cast<uint32_t>(static_cast<int32_t>(rc)));
