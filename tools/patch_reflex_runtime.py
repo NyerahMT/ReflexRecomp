@@ -7,6 +7,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 KIT = ROOT / "kit"
 SOURCE = ROOT / "runtime" / "reflex_compat.cpp"
+NUMERIC_HEADER = ROOT / "runtime" / "reflex_crt_numeric.h"
 
 
 def replace_once(path: Path, old: str, new: str, marker: str) -> None:
@@ -26,6 +27,9 @@ def main() -> None:
 
     target = KIT / "runtime" / "reflex_compat.cpp"
     shutil.copyfile(SOURCE, target)
+    if not NUMERIC_HEADER.is_file():
+        raise SystemExit(f"missing {NUMERIC_HEADER}")
+    shutil.copyfile(NUMERIC_HEADER, KIT / "runtime" / NUMERIC_HEADER.name)
 
     cmake = KIT / "runtime" / "CMakeLists.txt"
     replace_once(
