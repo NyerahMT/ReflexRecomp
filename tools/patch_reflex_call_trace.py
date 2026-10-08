@@ -66,7 +66,7 @@ def main():
         if ((ui_n & (ui_n - 1)) == 0) {
             fprintf(stderr,
                     "[reflex-ui-lookup] call=%llu ret=%08x this=%08x "
-                    "arg0=%08x arg1=%08x eax=%08x esi=%08x edi=%08x\n",
+                    "arg0=%08x arg1=%08x eax=%08x esi=%08x edi=%08x\\n",
                     (unsigned long long)ui_n, trace_ret, c->r[R_ECX],
                     rd32(trace_esp + 4), rd32(trace_esp + 8),
                     c->r[R_EAX], c->r[R_ESI], c->r[R_EDI]);
