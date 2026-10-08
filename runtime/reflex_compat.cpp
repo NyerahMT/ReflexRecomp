@@ -1959,7 +1959,48 @@ void crt_initterm_e(X86 *c) {
     set_eax(c, 0);
 }
 
+// XInput 1.3's ordinal exports are used directly by Reflex. In the
+// headless probe there is no gamepad attached: a real XInput DLL returns
+// ERROR_DEVICE_NOT_CONNECTED rather than success with an uninitialized
+// XINPUT_STATE/XINPUT_CAPABILITIES output buffer. This is also important for
+// guest ABI integrity: the imports dispatcher must pop the exact stdcall
+// argument count after each ordinal call.
+constexpr uint32_t kErrorDeviceNotConnected = 1167u;
+
+void xinput_controller_not_connected(X86 *c) {
+    // Do not touch caller-owned output memory on an error result.
+    set_eax(c, kErrorDeviceNotConnected);
+}
+
+void xinput_enable(X86 *c) {
+    // XInputEnable(BOOL) is void, with one stdcall argument.
+    // The headless backend does not have an XInput device to toggle.
+    set_eax(c, 0);
+}
+
 const ImportShim k_reflex_shims[] = {
+    // XInput 1.3 uses real numeric PE export ordinals (see Wine's
+    // xinput1_3.spec). Register both ordinal and named exports: some
+    // versions of the game/middleware import the latter.
+    // ord2 = XInputGetState(DWORD, XINPUT_STATE*)              [2]
+    // ord4 = XInputGetCapabilities(DWORD, DWORD, ...*)        [3]
+    {"XINPUT1_3.dll", "ord2", 2, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "XInputGetState", 2, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "ord4", 3, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "XInputGetCapabilities", 3, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "ord3", 2, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "XInputSetState", 2, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "ord5", 1, xinput_enable},
+    {"XINPUT1_3.dll", "XInputEnable", 1, xinput_enable},
+    {"XINPUT1_3.dll", "ord6", 3, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "XInputGetDSoundAudioDeviceGuids", 3, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "ord7", 3, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "XInputGetBatteryInformation", 3, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "ord8", 3, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "XInputGetKeystroke", 3, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "ord100", 2, xinput_controller_not_connected},
+    {"XINPUT1_3.dll", "XInputGetStateEx", 2, xinput_controller_not_connected},
+
     // Win32 ABI fixes observed during Reflex startup.
     {"KERNEL32.dll", "InterlockedCompareExchange", 3, reflex_interlocked_compare_exchange},
     {"USER32.dll", "RegisterRawInputDevices", 3, reflex_register_raw_input_devices},
