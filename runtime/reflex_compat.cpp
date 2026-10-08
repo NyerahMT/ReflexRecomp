@@ -467,6 +467,64 @@ void crt_strchr(X86 *c) {
     set_eax(c, 0);
 }
 
+// Safe-string exports must not report success when they cannot copy or
+// terminate the caller's destination. MSVC returns errno_t and expects the
+// destination to become an empty string on valid-buffer failure.
+void crt_strcpy_s(X86 *c) {
+    const uint32_t dst = arg(c, 0), cap = arg(c, 1), src = arg(c, 2);
+    if (!dst || !cap || !gm_valid(dst, 1) || !gm_valid(dst, cap)) {
+        set_eax(c, EINVAL);
+        return;
+    }
+    if (!src || !gm_valid(src, 1)) {
+        g_mem[dst] = 0;
+        set_eax(c, EINVAL);
+        return;
+    }
+    const std::string data = gm_str(src, 0x100000u);
+    if (data.size() >= cap) {
+        g_mem[dst] = 0;
+        set_eax(c, ERANGE);
+        return;
+    }
+    memmove(g_mem + dst, data.c_str(), data.size() + 1);
+    set_eax(c, 0);
+}
+
+void crt_strlwr_s(X86 *c) {
+    const uint32_t ptr = arg(c, 0), cap = arg(c, 1);
+    if (!ptr || !cap || !gm_valid(ptr, cap)) {
+        set_eax(c, EINVAL);
+        return;
+    }
+    uint32_t length = 0;
+    while (length < cap && g_mem[ptr + length]) ++length;
+    if (length == cap) {
+        g_mem[ptr] = 0;
+        set_eax(c, EINVAL);
+        return;
+    }
+    for (uint32_t i = 0; i < length; ++i) {
+        const uint8_t v = g_mem[ptr + i];
+        g_mem[ptr + i] =
+            static_cast<uint8_t>(std::tolower(static_cast<unsigned char>(v)));
+    }
+    set_eax(c, 0);
+}
+
+void crt_copysign(X86 *c) {
+    // MSVCR90.dll!_copysign(double, double) takes two 64-bit stack
+    // arguments and returns double in x87 ST(0) on 32-bit Windows.
+    const uint32_t args = c->r[R_ESP] + 4;
+    if (!gm_valid(args, 16)) {
+        fpush(c, 0.0);
+        return;
+    }
+    const double magnitude = rdf64(args);
+    const double sign = rdf64(args + 8);
+    fpush(c, std::copysign(magnitude, sign));
+}
+
 void crt_invalid_parameter_noinfo(X86 *c) {
     // The retail CRT reports the contract violation through its invalid
     // parameter handler. Bring-up only needs the call to preserve the ABI.
@@ -2137,6 +2195,9 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "strncat", ARGC_CDECL, crt_strncat},
     {"MSVCR90.dll", "strpbrk", ARGC_CDECL, crt_strpbrk},
     {"MSVCR90.dll", "strchr", ARGC_CDECL, crt_strchr},
+    {"MSVCR90.dll", "strcpy_s", ARGC_CDECL, crt_strcpy_s},
+    {"MSVCR90.dll", "_strlwr_s", ARGC_CDECL, crt_strlwr_s},
+    {"MSVCR90.dll", "_copysign", ARGC_CDECL, crt_copysign},
     {"MSVCR90.dll", "_invalid_parameter_noinfo", ARGC_CDECL,
      crt_invalid_parameter_noinfo},
     {"MSVCR90.dll",
