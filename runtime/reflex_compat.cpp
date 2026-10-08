@@ -8,6 +8,7 @@
 #include "memory.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cctype>
 #include <climits>
@@ -125,7 +126,27 @@ int ascii_icmp(const std::string &a, const std::string &b) {
 }
 
 void crt_stricmp(X86 *c) {
-    const int rc = ascii_icmp(gm_str(arg(c, 0)), gm_str(arg(c, 1)));
+    const uint32_t left_ptr = arg(c, 0), right_ptr = arg(c, 1);
+    const std::string left = gm_str(left_ptr);
+    const std::string right = gm_str(right_ptr);
+    const int rc = ascii_icmp(left, right);
+    const uint32_t ret = gm_valid(c->r[R_ESP], 4) ? rd32(c->r[R_ESP]) : 0u;
+    if (ret == 0x0084a8f0u) {
+        // An observed hot loop repeatedly calls _stricmp from this
+        // guest map-lookup site. Power-of-two sampling captures whether
+        // the keys/pointers change without emitting multi-gigabyte logs.
+        static std::atomic<uint64_t> count{0};
+        const uint64_t n = count.fetch_add(1, std::memory_order_relaxed) + 1;
+        if ((n & (n - 1)) == 0) {
+            fprintf(stderr,
+                    "[reflex-stricmp] call=%llu ret=%08x lhs=%08x \"%.*s\" rhs=%08x \"%.*s\" rc=%d esi=%08x edi=%08x ebx=%08x ecx=%08x\n",
+                    static_cast<unsigned long long>(n), ret, left_ptr,
+                    static_cast<int>(std::min<size_t>(left.size(), 64)), left.c_str(),
+                    right_ptr, static_cast<int>(std::min<size_t>(right.size(), 64)),
+                    right.c_str(), rc, c->r[R_ESI], c->r[R_EDI], c->r[R_EBX],
+                    c->r[R_ECX]);
+        }
+    }
     set_eax(c, static_cast<uint32_t>(static_cast<int32_t>(rc)));
 }
 
