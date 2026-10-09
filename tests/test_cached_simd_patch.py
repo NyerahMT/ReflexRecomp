@@ -45,16 +45,16 @@ def test_bulk_patch_preserves_unknown_instruction_and_is_idempotent(tmp_path):
         '00401300  CMPNEQPS XMM0,XMM1\n'
     )
     counts = mod.patch_cache(gen, asm)
-    assert sum(counts.values()) == 8
+    assert sum(counts.values()) == 9
     for name in ("ADDPS", "MULPS", "SUBPS", "CVTPS2PD", "CVTPD2PS",
-                 "SQRTPS", "CMPNEQPS", "CMPEQPS"):
+                 "SQRTPS", "CMPNEQPS", "CMPEQPS", "DIVPS"):
         assert counts[name] == 1
     rewritten = (gen / "chunk_000.c").read_text()
     assert rewritten.count(mod.INCLUDE) == 1
     assert 'reflex_packed_sse(c, 0x00401254u);' in rewritten
     assert 'reflex_packed_sse(c, 0x0040127eu);' in rewritten
     assert 'reflex_packed_sse(c, 0x004012a0u);' in rewritten
-    assert 'recomp_unmodelled(c,0x00401294u);return;' in rewritten
+    assert 'reflex_packed_sse(c, 0x00401294u);' in rewritten
     assert 'reflex_packed_sse(c, 0x004012bfu);' in (
         gen / "chunk_001.c").read_text()
     assert all(v == 0 for v in mod.patch_cache(gen, asm).values())
