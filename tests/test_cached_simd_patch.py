@@ -22,6 +22,10 @@ def test_bulk_patch_preserves_unknown_instruction_and_is_idempotent(tmp_path):
         '  recomp_unmodelled(c,0x0040127eu);return;\n'
         '  recomp_unmodelled(c,0x00401294u);return;\n'
         '  recomp_unmodelled(c,0x004012a0u);return;\n'
+        '  recomp_unmodelled(c,0x004012d0u);return;\n'
+        '  recomp_unmodelled(c,0x004012e0u);return;\n'
+        '  recomp_unmodelled(c,0x004012f0u);return;\n'
+        '  recomp_unmodelled(c,0x00401300u);return;\n'
         '}\n'
     )
     (gen / "chunk_001.c").write_text(
@@ -35,18 +39,25 @@ def test_bulk_patch_preserves_unknown_instruction_and_is_idempotent(tmp_path):
         '00401294  DIVPS XMM0,XMM1\n'
         '004012A0  SUBPS XMM3,XMM0\n'
         '004012BF  CMPEQPS XMM0,XMM1\n'
+        '004012D0  CVTPS2PD XMM0,XMM1\n'
+        '004012E0  CVTPD2PS XMM0,XMM1\n'
+        '004012F0  SQRTPS XMM3,XMM0\n'
+        '00401300  CMPNEQPS XMM0,XMM1\n'
     )
     counts = mod.patch_cache(gen, asm)
-    assert counts == {"ADDPS": 1, "MULPS": 1, "SUBPS": 1}
+    assert sum(counts.values()) == 8
+    for name in ("ADDPS", "MULPS", "SUBPS", "CVTPS2PD", "CVTPD2PS",
+                 "SQRTPS", "CMPNEQPS", "CMPEQPS"):
+        assert counts[name] == 1
     rewritten = (gen / "chunk_000.c").read_text()
     assert rewritten.count(mod.INCLUDE) == 1
     assert 'reflex_packed_sse(c, 0x00401254u);' in rewritten
     assert 'reflex_packed_sse(c, 0x0040127eu);' in rewritten
     assert 'reflex_packed_sse(c, 0x004012a0u);' in rewritten
     assert 'recomp_unmodelled(c,0x00401294u);return;' in rewritten
-    assert 'recomp_unmodelled(c,0x004012bfu);return;' in (
+    assert 'reflex_packed_sse(c, 0x004012bfu);' in (
         gen / "chunk_001.c").read_text()
-    assert mod.patch_cache(gen, asm) == {"ADDPS": 0, "MULPS": 0, "SUBPS": 0}
+    assert all(v == 0 for v in mod.patch_cache(gen, asm).values())
     assert (gen / "chunk_000.c").read_text() == rewritten
 
 
