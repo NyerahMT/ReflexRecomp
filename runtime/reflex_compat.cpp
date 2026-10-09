@@ -139,8 +139,28 @@ int guest_ascii_icmp(uint32_t lhs, uint32_t rhs) {
 
 void crt_stricmp(X86 *c) {
     const uint32_t left_ptr = arg(c, 0), right_ptr = arg(c, 1);
-    const int rc = guest_ascii_icmp(left_ptr, right_ptr);
+    int rc = guest_ascii_icmp(left_ptr, right_ptr);
     const uint32_t ret = gm_valid(c->r[R_ESP], 4) ? rd32(c->r[R_ESP]) : 0u;
+    // Controlled startup experiment: the private MXUI index contains
+    // "Intro.ENG", but the guest currently asks for "Intro.". A mismatch
+    // here might be why startup spins. NEVER change ordinary CRT string
+    // comparison semantics in production; this only runs with explicit
+    // opt-in in our 30-second CI experiment.
+    static const bool probe_intro_english = [] {
+        const char *flag = std::getenv("REFLEX_PROBE_INTRO_ENGLISH");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    if (probe_intro_english && ret == 0x0084a8f0u &&
+        gm_valid(left_ptr, sizeof("Intro.ENG")) &&
+        gm_valid(right_ptr, sizeof("Intro.")) &&
+        std::memcmp(g_mem + left_ptr, "Intro.ENG", sizeof("Intro.ENG")) == 0 &&
+        std::memcmp(g_mem + right_ptr, "Intro.", sizeof("Intro.")) == 0) {
+        static std::atomic<uint32_t> probe_hits{0};
+        const uint32_t hit = probe_hits.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (hit <= 8 || (hit & (hit - 1)) == 0)
+            std::fprintf(stderr, "[reflex-intro-probe] exact Intro. -> Intro.ENG match count=%u\\n", hit);
+        rc = 0;
+    }
     if (ret == 0x0084a8f0u) {
         // Keep power-of-two samples for diagnosing the current UI lookup
         // loop, but only materialize names when a sample is emitted.
