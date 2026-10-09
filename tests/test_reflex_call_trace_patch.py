@@ -25,6 +25,8 @@ def test_virtual_lookup_trace_uses_c_escaped_newline(tmp_path):
         assert r'lock_count=%08x\n"' in generated
         assert 'suffix_dword=%08x\n"' not in generated
         assert 'lock_addr64 + 4u <= GUEST_SIZE' in generated
+        assert r'locale_id=%08x\n"' in generated
+        assert 'rd32(0x00a94078u)' in generated
         assert generated.count(patcher.MARKER) >= 1
         # The instrumenting script must be repeatable without double insertion.
         patcher.main()
