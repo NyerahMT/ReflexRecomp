@@ -65,14 +65,14 @@ def main():
         const uint64_t q_n =
             __atomic_add_fetch(&reflex_resource_enqueue_calls, 1, __ATOMIC_RELAXED);
         if (q_n <= 32 || (q_n & (q_n - 1)) == 0) {
-            const uint32_t manager = gm_valid(trace_esp + 4, 28)
+            const uint32_t manager = (trace_esp >= 0x10000u && trace_esp <= GUEST_SIZE - 32u)
                 ? rd32(trace_esp + 4) : 0u;
-            const uint32_t first_key = gm_valid(trace_esp + 12, 4)
+            const uint32_t first_key = (trace_esp >= 0x10000u && trace_esp <= GUEST_SIZE - 16u)
                 ? rd32(trace_esp + 12) : 0u;
             const uint32_t key_prefix = first_key &&
-                gm_valid(first_key, 4) ? rd32(first_key) : 0u;
+                (first_key >= 0x10000u && first_key <= GUEST_SIZE - 4u) ? rd32(first_key) : 0u;
             const uint32_t event = manager &&
-                gm_valid(manager + 0xf8u, 4) ?
+                (manager >= 0x10000u && manager <= GUEST_SIZE - 0xfcu) ?
                 rd32(manager + 0xf8u) : 0u;
             fprintf(stderr,
                     "[reflex-queue] call=%llu ret=%08x manager=%08x "
