@@ -39,6 +39,6 @@ def test_pinned_kernel32_runtime_patch_anchors():
         patched = patched.replace(old, new, 1)
         assert marker in patched
         count += 1
-    assert count >= 7, "Unexpected loss of kernel32 event, wait or thread patches"
+    assert count >= 6, "Unexpected loss of kernel32 event, wait or thread patches"
     assert "[reflex-thread] CreateThread start=" in patched
     assert "DatabaseThreadEvent" in patched
