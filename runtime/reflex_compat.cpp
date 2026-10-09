@@ -234,6 +234,8 @@ void crt_strpbrk(X86 *c) {
 
 std::mutex g_file_mutex;
 std::unordered_map<uint32_t, std::FILE *> g_guest_files;
+// Diagnostic-only handle for the three-character language.txt startup read.
+uint32_t g_guest_language_file = 0;
 
 std::string host_path_for_guest(std::string path) {
     std::replace(path.begin(), path.end(), '\\', '/');
@@ -288,6 +290,8 @@ void crt_fopen(X86 *c) {
     {
         std::lock_guard<std::mutex> lock(g_file_mutex);
         g_guest_files.emplace(handle, file);
+        if (guest_path == "language.txt")
+            g_guest_language_file = handle;
     }
     fprintf(stderr,
             "[recomp] fopen ok: guest=\"%s\" mode=\"%s\" handle=%08x\\n",
@@ -304,6 +308,8 @@ void crt_fclose(X86 *c) {
         if (it != g_guest_files.end()) {
             file = it->second;
             g_guest_files.erase(it);
+            if (g_guest_language_file == handle)
+                g_guest_language_file = 0;
         }
     }
     if (!file) {
@@ -383,9 +389,24 @@ void crt_fgets(X86 *c) {
         set_eax(c, 0);
         return;
     }
-    set_eax(c, std::fgets(reinterpret_cast<char *>(g_mem + dst), cap, file)
-                   ? dst
-                   : 0u);
+    char *line = std::fgets(reinterpret_cast<char *>(g_mem + dst), cap, file);
+    if (handle == g_guest_language_file) {
+        // The game opens language.txt at 0088175e and passes a 4-byte
+        // character buffer to fgets at 00881773. Record the real source
+        // bytes, not resource-manager synchronization state. Never read past
+        // cap or past the guest arena and never alter the stream.
+        uint32_t bytes[4] = {};
+        if (line) {
+            for (uint32_t i = 0; i < 4 && i < static_cast<uint32_t>(cap); ++i)
+                bytes[i] = g_mem[dst + i];
+        }
+        std::fprintf(stderr,
+                     "[reflex-locale] language.txt fgets cap=%d ok=%u "
+                     "bytes=%02x:%02x:%02x:%02x\\n",
+                     cap, line ? 1u : 0u, bytes[0], bytes[1],
+                     bytes[2], bytes[3]);
+    }
+    set_eax(c, line ? dst : 0u);
 }
 
 void crt_fseek(X86 *c) {
