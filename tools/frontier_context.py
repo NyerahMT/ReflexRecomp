@@ -256,6 +256,7 @@ def main():
         print_callers(args.listing_root, "0x00883ab2", 100)
         # Trace the UI resource lookup that repeatedly requests Intro/Intro.
         print_callers(args.listing_root, "0x0084a890", 60)
+        print_metadata_matches(args.listing_root, ["0091600c", "009160f8", "00916014", "language.txt", "00916078"])
         print_callers(args.listing_root, "0x0084a7f0", 60)
         print_function_strings(args.listing_root, ["0084a890", "0084a7f0", "0084a950"])
 
