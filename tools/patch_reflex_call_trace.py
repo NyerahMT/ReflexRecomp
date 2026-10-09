@@ -64,21 +64,21 @@ def main():
         const uint64_t ui_n =
             __atomic_add_fetch(&reflex_ui_lookup_calls, 1, __ATOMIC_RELAXED);
         if ((ui_n & (ui_n - 1)) == 0) {
-            // FUN_0084a890 reads its resource-language suffix from
-            // [ECX+0x62b54]. Snapshot four raw bytes before the lookup so
-            // an empty .ENG suffix can be distinguished from a missing key.
-            const uint64_t suffix_addr64 =
-                (uint64_t)c->r[R_ECX] + 0x62b54u;
-            const uint32_t suffix_word =
-                suffix_addr64 >= 0x10000u &&
-                suffix_addr64 + 4u <= GUEST_SIZE
-                ? rd32((uint32_t)suffix_addr64) : 0u;
+            // Guest field [ECX+0x62b54] is a 24-byte critical section,
+            // NOT a language string. Read its lock-count member safely.
+            // Locale text is separately traced in crt_fgets(language.txt).
+            const uint64_t lock_addr64 =
+                (uint64_t)c->r[R_ECX] + 0x62b58u;
+            const uint32_t lock_count =
+                lock_addr64 >= 0x10000u &&
+                lock_addr64 + 4u <= GUEST_SIZE
+                ? rd32((uint32_t)lock_addr64) : 0u;
             fprintf(stderr,
                     "[reflex-ui-lookup] call=%llu ret=%08x this=%08x "
-                    "arg0=%08x arg1=%08x eax=%08x esi=%08x edi=%08x suffix_dword=%08x\\n",
+                    "arg0=%08x arg1=%08x eax=%08x esi=%08x edi=%08x lock_count=%08x\\n",
                     (unsigned long long)ui_n, trace_ret, c->r[R_ECX],
                     rd32(trace_esp + 4), rd32(trace_esp + 8),
-                    c->r[R_EAX], c->r[R_ESI], c->r[R_EDI], suffix_word);
+                    c->r[R_EAX], c->r[R_ESI], c->r[R_EDI], lock_count);
         }
     }
 
