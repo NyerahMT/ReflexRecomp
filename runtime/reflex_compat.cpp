@@ -158,7 +158,7 @@ void crt_stricmp(X86 *c) {
         static std::atomic<uint32_t> probe_hits{0};
         const uint32_t hit = probe_hits.fetch_add(1, std::memory_order_relaxed) + 1;
         if (hit <= 8 || (hit & (hit - 1)) == 0)
-            std::fprintf(stderr, "[reflex-intro-probe] exact Intro. -> Intro.ENG match count=%u\\n", hit);
+            std::fprintf(stderr, "[reflex-intro-probe] exact Intro. -> Intro.ENG match count=%u\n", hit);
         rc = 0;
     }
     if (ret == 0x0084a8f0u) {
