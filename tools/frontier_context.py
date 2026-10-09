@@ -64,7 +64,9 @@ def context_for(root: Path, target: int, names):
 
     nearest = min(range(len(rows)), key=lambda i: abs(rows[i][0] - target))
     lo = max(0, nearest - 16)
-    if target == start and start in {0x00804340, 0x00806110}:
+    if target == start and start in {0x0084a7f0, 0x0084a890, 0x0084a840}:
+        forward = 240
+    elif target == start and start in {0x00804340, 0x00806110}:
         forward = 420 if start == 0x00804340 else 320
     else:
         forward = 64 if target == start and start in {0x007b56d0, 0x007b6680, 0x00756e10, 0x0078fbe0} else 10
@@ -260,9 +262,9 @@ def main():
         print_callers(args.listing_root, "0x0084a7f0", 60)
         print_function_strings(args.listing_root, ["0084a890", "0084a7f0", "0084a950"])
 
-        # Resource lookup reads a language code at [this + 0x62b54].
-        # Recover all writer/reader call sites from the private listing.
-        print("ui-language-member-xrefs: 0x62b54")
+        # Resource lookup protects the resource map with a lock at
+        # [this + 0x62b54]. This is a critical section, NOT a language ID.
+        print("ui-critical-section-member-xrefs: 0x62b54")
         field_count = 0
         for path in sorted((args.listing_root / "functions").glob("*.asm")):
             rows = parse_asm(path)
