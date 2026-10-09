@@ -1,6 +1,10 @@
 """Regression test: injected trace strings must remain valid C source."""
 import importlib.util
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "patch_reflex_call_trace.py"
 SPEC = importlib.util.spec_from_file_location("reflex_call_trace_patch", SCRIPT)
@@ -41,3 +45,31 @@ def test_virtual_lookup_trace_uses_c_escaped_newline(tmp_path):
         assert table.read_text() == generated
     finally:
         patcher.TABLE = old_table
+
+
+def test_cached_dispatch_trace_compiles_as_c11(tmp_path):
+    """Generated translation is C, not C++: catch mismatched shims early."""
+    cc = shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")
+    if not cc:
+        pytest.skip("C compiler unavailable")
+    table = tmp_path / "table.c"
+    table.write_text(
+        "#include <stdint.h>\n#include <stdio.h>\n"
+        "typedef struct X86 { uint32_t r[8]; } X86;\n"
+        "enum { R_EAX, R_ECX, R_EDX, R_EBX, R_ESP, R_EBP, R_ESI, R_EDI };\n"
+        "#define GUEST_SIZE (0x20000000u)\n"
+        "static uint32_t rd32(uint32_t p) { (void)p; return 0; }\n"
+        "void recomp_call(X86 *c, uint32_t target)\n{\n"
+        "  (void)c; (void)target;\n}\n"
+    )
+    saved = patcher.TABLE
+    try:
+        patcher.TABLE = table
+        patcher.main()
+        subprocess.run(
+            [cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+             "-fsyntax-only", str(table)],
+            capture_output=True, text=True, check=True,
+        )
+    finally:
+        patcher.TABLE = saved
