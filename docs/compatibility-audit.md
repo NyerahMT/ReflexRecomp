@@ -18,6 +18,28 @@ A successful 30-second headless Linux gate does **not** prove a rendered menu or
 
 Native unit tests cover the numeric helper, actual copied MSVCP90 string-constructor implementation, and the unsupported-opcode scanner. Full workflow results must be checked before calling the latest commits validated.
 
+## Menu startup evidence — 2026-10-08
+
+The first family-wide SIMD pass reduced translation traps from 38,368 to
+7,605 (about 80%). The native Linux application built, but its runtime gate
+still failed while querying the private MXUI database repeatedly for `Intro`
+and `Intro.`, although localization keys such as `Intro.ENG` appear in the
+loaded database.
+
+**Important disassembly correction:** offsets `0x62b3c`, `0x62b54`, and
+`0x62b6c` in the resource manager are 24-byte synchronization objects,
+not MSVC string objects. The constructor initializes them as three separate
+24-byte structures, and the resource lookup passes `this + 0x62b54` to
+an imported synchronization call. Do not overwrite these objects with a
+language string. The temporary `suffix_dword` trace only probes lock memory
+and should not be interpreted as a language-code value.
+
+Next investigation: inspect the `language.txt` reader near `0x008814a0`
+and the actual resource-key assembly path near `0x0084a7f0`/`0x0084a890`.
+Confirm the producer of `Intro.` and the string/locale passed to the lookup
+before changing runtime lookup semantics. The code that retries the lookup is
+not itself evidence of a defective retry mechanism.
+
 ## Unresolved priorities
 
 | Priority | Area | Evidence / next validation |
