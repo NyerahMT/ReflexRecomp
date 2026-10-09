@@ -273,6 +273,35 @@ jobs:
             build/logs/runtime.log | tail -n 80 || true
           exit 1
 
+      # Controlled bisection of the Intro/Intro. vs Intro.ENG key mismatch.
+      # The normal runtime gate above remains the baseline. The exact-key
+      # comparison workaround only runs in this explicit probe environment.
+      - name: Compare exact localized Intro lookup (diagnostic only)
+        if: steps.host.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          app="$GITHUB_WORKSPACE/build/package/ReflexRecomp/ReflexRecomp"
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            timeout --signal=TERM --kill-after=5s 30s \
+            env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
+                RECOMP_LOG=1 \
+                RECOMP_WATCH_FRAME=1 \
+                REFLEX_PROBE_INTRO_ENGLISH=1 \
+                SDL_AUDIODRIVER=dummy \
+                "$app" \
+            >build/logs/runtime-intro-probe.log 2>&1
+          rc=$?
+          echo "$rc" > build/logs/runtime-intro-probe-exit.txt
+          echo "Diagnostic Intro-key probe exit: $rc"
+          grep -E '\[reflex-intro-probe\]|\[reflex-ui-lookup\]|SEH: unhandled|call to unknown target' \
+            build/logs/runtime-intro-probe.log | tail -n 60 || true
+          python3 tools/check_reflex_boot_progress.py \
+            build/logs/runtime-intro-probe.log \
+            > build/logs/runtime-intro-probe-progress.txt 2>&1 || true
+          cat build/logs/runtime-intro-probe-progress.txt
+          exit 0
+
       - name: Upload fast-path logs
         if: always()
         uses: actions/upload-artifact@v4
