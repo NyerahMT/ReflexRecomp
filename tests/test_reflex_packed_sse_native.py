@@ -102,6 +102,92 @@ int main() {
     code(0x11070, {0x0f,0x59,0x00}); // invalid null source
     reflex_packed_sse(&c, 0x11070);
     assert(traps == 2);
+
+    // CVTPS2PD XMM0,XMM0: convert both low floats, replacing all lanes.
+    for (int i=0; i<4; ++i) setlane(c, 0, i, i == 0 ? 1.5f : -2.25f);
+    code(0x11100, {0x0f,0x5a,0xc0});
+    reflex_packed_sse(&c, 0x11100);
+    double d0 = 0, d1 = 0;
+    memcpy(&d0, &c.xmm[0][0], 8);
+    memcpy(&d1, &c.xmm[0][2], 8);
+    assert(d0 == 1.5 && d1 == -2.25);
+
+    // CVTPD2PS XMM0,XMM0: mandatory 66 prefix and high 64 bits cleared.
+    code(0x11110, {0x66,0x0f,0x5a,0xc0});
+    reflex_packed_sse(&c, 0x11110);
+    assert(lane(c, 0, 0) == 1.5f);
+    assert(lane(c, 0, 1) == -2.25f);
+    assert(c.xmm[0][2] == 0 && c.xmm[0][3] == 0);
+
+    // CVTPS2PD XMM2, m64: read two floats and not an unnecessary 16 bytes.
+    const float cv_input[] = {0.25f, -16.0f};
+    memcpy(g_mem + 0x17030, cv_input, sizeof cv_input);
+    code(0x11120, {0x0f,0x5a,0x15,0x30,0x70,0x01,0x00});
+    reflex_packed_sse(&c, 0x11120);
+    memcpy(&d0, &c.xmm[2][0], 8);
+    memcpy(&d1, &c.xmm[2][2], 8);
+    assert(d0 == 0.25 && d1 == -16.0);
+
+    // Packed comparison masks: NEQ is true for unequal or unordered NaNs.
+    setlane(c, 1, 0, 1.f); setlane(c, 1, 1, 2.f);
+    setlane(c, 1, 2, 3.f); setlane(c, 1, 3, 4.f);
+    setlane(c, 2, 0, 1.f); setlane(c, 2, 1, 3.f);
+    setlane(c, 2, 2, std::nanf("")); setlane(c, 2, 3, 2.f);
+    code(0x11130, {0x0f,0xc2,0xca,0x04}); // CMPNEQPS xmm1,xmm2
+    reflex_packed_sse(&c, 0x11130);
+    assert(c.xmm[1][0] == 0 && c.xmm[1][1] == UINT32_MAX);
+    assert(c.xmm[1][2] == UINT32_MAX && c.xmm[1][3] == UINT32_MAX);
+
+    // Scalar CMPNLESS and CMPNLESD preserve their upper lanes.
+    setlane(c, 1, 0, 4.f); setlane(c, 2, 0, 3.f);
+    c.xmm[1][1] = 0x11223344u;
+    c.xmm[1][2] = 0x55667788u;
+    c.xmm[1][3] = 0x99aabbccu;
+    code(0x11140, {0xf3,0x0f,0xc2,0xca,0x06});
+    reflex_packed_sse(&c, 0x11140);
+    assert(c.xmm[1][0] == UINT32_MAX &&
+           c.xmm[1][1] == 0x11223344u &&
+           c.xmm[1][2] == 0x55667788u &&
+           c.xmm[1][3] == 0x99aabbccu);
+    double large = 20.0, small = 5.0;
+    memcpy(&c.xmm[1][0], &large, 8);
+    memcpy(&c.xmm[2][0], &small, 8);
+    code(0x11150, {0xf2,0x0f,0xc2,0xca,0x06});
+    reflex_packed_sse(&c, 0x11150);
+    assert(c.xmm[1][0] == UINT32_MAX && c.xmm[1][1] == UINT32_MAX &&
+           c.xmm[1][2] == 0x55667788u && c.xmm[1][3] == 0x99aabbccu);
+
+    // DIVPS and SQRTPS lanes, plus exact source-bit choice for MINPS/MAXPS.
+    for (int i=0; i<4; ++i) {
+        setlane(c, 3, i, 16.0f * (i + 1));
+        setlane(c, 2, i, 2.0f);
+    }
+    code(0x11160, {0x0f,0x5e,0xda}); // DIVPS xmm3,xmm2
+    reflex_packed_sse(&c, 0x11160);
+    const float quotients[] = {8,16,24,32};
+    verify(c, 3, quotients);
+    code(0x11170, {0x0f,0x51,0xd3}); // SQRTPS xmm2,xmm3
+    reflex_packed_sse(&c, 0x11170);
+    const float roots[] = {std::sqrt(8.f),4.f,std::sqrt(24.f),std::sqrt(32.f)};
+    verify(c, 2, roots);
+
+    c.xmm[1][0] = 0x00000000u; // +0
+    c.xmm[2][0] = 0x80000000u; // -0
+    c.xmm[1][1] = 0x7fc00001u; // NaN payload
+    c.xmm[2][1] = 0x3f800000u; // 1
+    code(0x11180, {0x0f,0x5d,0xca}); // MINPS xmm1,xmm2
+    reflex_packed_sse(&c, 0x11180);
+    assert(c.xmm[1][0] == 0x80000000u && c.xmm[1][1] == 0x3f800000u);
+    c.xmm[1][0] = 0x00000000u;
+    c.xmm[2][0] = 0x80000000u;
+    code(0x11190, {0x0f,0x5f,0xca}); // MAXPS xmm1,xmm2
+    reflex_packed_sse(&c, 0x11190);
+    assert(c.xmm[1][0] == 0x80000000u);
+
+    // Deliberately unsupported approximate reciprocal family fails explicitly.
+    code(0x111a0, {0x0f,0x53,0xca}); // RCPPS
+    reflex_packed_sse(&c, 0x111a0);
+    assert(traps == 3);
     return 0;
 }
 """
