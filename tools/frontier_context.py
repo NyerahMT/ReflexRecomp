@@ -64,7 +64,7 @@ def context_for(root: Path, target: int, names):
 
     nearest = min(range(len(rows)), key=lambda i: abs(rows[i][0] - target))
     lo = max(0, nearest - 16)
-    if target == start and start in {0x0084a7f0, 0x0084a890, 0x0084a840}:
+    if target == start and start in {0x0084a7f0, 0x0084a890, 0x0084a840, 0x0084c190}:
         forward = 240
     elif target == start and start in {0x00804340, 0x00806110}:
         forward = 420 if start == 0x00804340 else 320
@@ -260,6 +260,7 @@ def main():
         print_callers(args.listing_root, "0x0084a890", 60)
         print_metadata_matches(args.listing_root, ["0091600c", "009160f8", "00916014", "language.txt", "00916078"])
         print_callers(args.listing_root, "0x0084a7f0", 60)
+        print_callers(args.listing_root, "0x0084c190", 60)
         print_function_strings(args.listing_root, ["0084a890", "0084a7f0", "0084a950"])
 
         # Resource lookup protects the resource map with a lock at
