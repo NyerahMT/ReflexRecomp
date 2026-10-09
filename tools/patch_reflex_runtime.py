@@ -126,10 +126,10 @@ def main() -> None:
     replace_once(
         kernel32,
         "    LOGV(\"CreateThread(%08x, param=%08x, flags=%08x) -> handle %08x id %u\", start, param, flags, h,\n"
-        "          t->id);\n"
+        "         t->id);\n"
         "    set_eax(c, h);",
         "    LOGV(\"CreateThread(%08x, param=%08x, flags=%08x) -> handle %08x id %u\", start, param, flags, h,\n"
-        "          t->id);\n"
+        "         t->id);\n"
         "    fprintf(stderr, \"[reflex-thread] CreateThread start=%08x param=%08x flags=%08x handle=%08x tid=%u suspended=%d\\n\",\n"
         "            start, param, flags, h, t->id, t->suspend_count);\n"
         "    set_eax(c, h);",
