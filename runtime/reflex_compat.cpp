@@ -402,7 +402,7 @@ void crt_fgets(X86 *c) {
         }
         std::fprintf(stderr,
                      "[reflex-locale] language.txt fgets cap=%d ok=%u "
-                     "bytes=%02x:%02x:%02x:%02x\\n",
+                     "bytes=%02x:%02x:%02x:%02x\n",
                      cap, line ? 1u : 0u, bytes[0], bytes[1],
                      bytes[2], bytes[3]);
     }
