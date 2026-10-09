@@ -256,6 +256,29 @@ def main():
     names = load_names(args.listing_root)
     if args.quick:
         print_callers(args.listing_root, "0x00883ab2", 100)
+        # Direct guest->guest calls can compile to native calls without
+        # recomp_call(). Find actual generated C function labels for resource
+        # submission and lookup before instrumenting the dispatch path.
+        print("generated-resource-call-sites:")
+        chunks = Path("build/recomp/gen")
+        for code_term in ("0084c190", "0084a7f0", "0084a890"):
+            found = 0
+            for path in sorted(chunks.glob("chunk_*.c")):
+                if found >= 12:
+                    break
+                lines = path.read_text(errors="replace").splitlines()
+                for index, line in enumerate(lines):
+                    if code_term not in line.lower():
+                        continue
+                    print(f"  {code_term} {path.name}:{index + 1}")
+                    for nearby in lines[max(0, index - 3): index + 5]:
+                        print("    " + nearby[:220])
+                    found += 1
+                    if found >= 12:
+                        break
+            if found == 0:
+                print(f"  {code_term} not present in translation source")
+
         # Trace the UI resource lookup that repeatedly requests Intro/Intro.
         print_callers(args.listing_root, "0x0084a890", 60)
         print_metadata_matches(args.listing_root, ["0091600c", "009160f8", "00916014", "language.txt", "00916078"])
