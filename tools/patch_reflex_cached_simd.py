@@ -55,6 +55,11 @@ def patch_cache(generated: Path, listing: Path) -> dict[str, int]:
         hits = tuple(TRAP.finditer(code))
         by_chunk[path] = (code, hits)
         addresses.update(int(match.group(1), 16) for match in hits)
+    # A fully patched translation may contain *no* remaining traps at all.
+    # An idempotent second pass must accept that specific state, but an
+    # unpatched/missing baseline still fails closed.
+    if not addresses and any(INCLUDE in text for text, _ in by_chunk.values()):
+        return {m: 0 for m in sorted(SUPPORTED)}
     kinds = load_mnemonics(listing, addresses)
     if not kinds:
         raise RuntimeError(f"Private disassembly missing or no opcode mappings: {listing}")
