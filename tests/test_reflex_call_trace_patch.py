@@ -22,9 +22,9 @@ def test_virtual_lookup_trace_uses_c_escaped_newline(tmp_path):
         patcher.main()
         generated = table.read_text()
         assert '[reflex-ui-lookup]' in generated
-        assert r'suffix_dword=%08x\n"' in generated
+        assert r'lock_count=%08x\n"' in generated
         assert 'suffix_dword=%08x\n"' not in generated
-        assert 'suffix_addr64 + 4u <= GUEST_SIZE' in generated
+        assert 'lock_addr64 + 4u <= GUEST_SIZE' in generated
         assert generated.count(patcher.MARKER) >= 1
         # The instrumenting script must be repeatable without double insertion.
         patcher.main()
