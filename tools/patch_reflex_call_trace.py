@@ -56,6 +56,34 @@ def main():
                 c->r[R_EDX], c->r[R_ESI], c->r[R_EDI]);
     }
 
+    if (target == 0x0084c190u) {
+        // Trace the resource-task *submission* rather than the lookup spin.
+        // Args: manager, request type, key, secondary key, ... as seen
+        // at 0084a80b. Retained as raw guest values to avoid interpreting
+        // arbitrary pointers as a safe nul-terminated host string.
+        static uint64_t reflex_resource_enqueue_calls = 0;
+        const uint64_t q_n =
+            __atomic_add_fetch(&reflex_resource_enqueue_calls, 1, __ATOMIC_RELAXED);
+        if (q_n <= 32 || (q_n & (q_n - 1)) == 0) {
+            const uint32_t manager = gm_valid(trace_esp + 4, 28)
+                ? rd32(trace_esp + 4) : 0u;
+            const uint32_t first_key = gm_valid(trace_esp + 12, 4)
+                ? rd32(trace_esp + 12) : 0u;
+            const uint32_t key_prefix = first_key &&
+                gm_valid(first_key, 4) ? rd32(first_key) : 0u;
+            const uint32_t event = manager &&
+                gm_valid(manager + 0xf8u, 4) ?
+                rd32(manager + 0xf8u) : 0u;
+            fprintf(stderr,
+                    "[reflex-queue] call=%llu ret=%08x manager=%08x "
+                    "type=%08x key=%08x prefix=%08x arg3=%08x "
+                    "event=%08x\\n",
+                    (unsigned long long)q_n, trace_ret, manager,
+                    rd32(trace_esp + 8), first_key, key_prefix,
+                    rd32(trace_esp + 16), event);
+        }
+    }
+
     if (target == 0x0084a890u) {
         // This virtual resource lookup searches UI data by key. Direct
         // cross-references cannot identify its callers; sample the guest
