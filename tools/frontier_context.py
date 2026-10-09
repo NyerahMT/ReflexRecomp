@@ -258,6 +258,28 @@ def main():
         print_callers(args.listing_root, "0x0084a890", 60)
         print_callers(args.listing_root, "0x0084a7f0", 60)
         print_function_strings(args.listing_root, ["0084a890", "0084a7f0", "0084a950"])
+
+        # Resource lookup reads a language code at [this + 0x62b54].
+        # Recover all writer/reader call sites from the private listing.
+        print("ui-language-member-xrefs: 0x62b54")
+        field_count = 0
+        for path in sorted((args.listing_root / "functions").glob("*.asm")):
+            rows = parse_asm(path)
+            for i, (_, line) in enumerate(rows):
+                if "0x62b54" not in line.lower():
+                    continue
+                print(f"  function={path.stem}")
+                for _, near in rows[max(0, i - 5):i + 7]:
+                    print(f"    {near}")
+                field_count += 1
+                if field_count >= 35:
+                    break
+            if field_count >= 35:
+                print("  ... truncated at 35 matches")
+                break
+        if field_count == 0:
+            print("  none")
+
         print_literal_xrefs(args.listing_root, "0x00d67ce8", 120)
         print_literal_xrefs(args.listing_root, "0x00d67cec", 120)
         print_literal_xrefs(args.listing_root, "0x00d67fd0", 120)
