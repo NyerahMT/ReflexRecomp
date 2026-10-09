@@ -121,6 +121,32 @@ def print_string_rows(root: Path, addresses):
         print(f"  0x{needle}: not-found")
 
 
+
+def print_resource_string_references(root: Path) -> None:
+    """Locate private code references to Intro and localization key fragments."""
+    print("resource-key-text-xrefs:")
+    path = root / "strings.tsv"
+    if not path.is_file():
+        print("  private strings.tsv unavailable")
+        return
+    terms = ("intro", "english", "locale", ".eng", "localized")
+    found = 0
+    for raw in path.read_text(errors="replace").splitlines():
+        fields = raw.split("\t")
+        if len(fields) < 4:
+            continue
+        value = "\t".join(fields[3:]).lower()
+        if "intro" not in value and not any(value.startswith(t) for t in terms[1:]):
+            continue
+        print("  " + raw[:260])
+        found += 1
+        if found >= 80:
+            print("  ... truncated")
+            break
+    if not found:
+        print("  none")
+
+
 def print_stdio_metadata(root: Path):
     terms = ("fopen", "fread", "fgets", "fseek", "ftell", "fclose", "rewind")
     print("stdio-metadata:")
@@ -279,6 +305,7 @@ def main():
             if found == 0:
                 print(f"  {code_term} not present in translation source")
 
+        print_resource_string_references(args.listing_root)
         # Trace the UI resource lookup that repeatedly requests Intro/Intro.
         print_callers(args.listing_root, "0x0084a890", 60)
         print_metadata_matches(args.listing_root, ["0091600c", "009160f8", "00916014", "language.txt", "00916078"])
