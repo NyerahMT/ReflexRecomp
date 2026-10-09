@@ -25,7 +25,10 @@ def test_virtual_lookup_trace_uses_c_escaped_newline(tmp_path):
         assert '[reflex-queue]' in generated
         assert 'target == 0x0084c190u' in generated
         assert 'q_n <= 32 || (q_n & (q_n - 1)) == 0' in generated
-        assert 'gm_valid(manager + 0xf8u, 4)' in generated
+        assert 'manager <= GUEST_SIZE - 0xfcu' in generated
+        assert 'first_key <= GUEST_SIZE - 4u' in generated
+        assert 'gm_valid(' not in generated
+        assert 'trace_esp <= GUEST_SIZE - 32u' in generated
         assert r'event=%08x\n"' in generated
         assert 'lock_count=%08x locale_id=%08x' in generated
         assert 'suffix_dword=%08x\n"' not in generated
