@@ -122,19 +122,17 @@ def main() -> None:
     )
 
     kernel32 = KIT / "runtime" / "kernel32.cpp"
-    # Trace thread creation and database/loader wakeups at warning level,
-    # independently of the very noisy per-import RECOMP_LOG=2. This lets
-    # the boot probe identify missing resource-worker scheduling.
+    # Trace resource-worker thread startup without per-import log flooding.
     replace_once(
         kernel32,
-        '    LOGV("CreateThread(%08x, param=%08x, flags=%08x) -> handle %08x id %u", start, param, flags, h,\\n'
-        '          t->id);\\n'
-        '    set_eax(c, h);',
-        '    LOGV("CreateThread(%08x, param=%08x, flags=%08x) -> handle %08x id %u", start, param, flags, h,\\n'
-        '          t->id);\\n'
-        '    fprintf(stderr, "[reflex-thread] CreateThread start=%08x param=%08x flags=%08x handle=%08x tid=%u suspended=%d\\\\n",\\n'
-        '            start, param, flags, h, t->id, t->suspend_count);\\n'
-        '    set_eax(c, h);',
+        "    LOGV(\"CreateThread(%08x, param=%08x, flags=%08x) -> handle %08x id %u\", start, param, flags, h,\n"
+        "          t->id);\n"
+        "    set_eax(c, h);",
+        "    LOGV(\"CreateThread(%08x, param=%08x, flags=%08x) -> handle %08x id %u\", start, param, flags, h,\n"
+        "          t->id);\n"
+        "    fprintf(stderr, \"[reflex-thread] CreateThread start=%08x param=%08x flags=%08x handle=%08x tid=%u suspended=%d\\n\",\n"
+        "            start, param, flags, h, t->id, t->suspend_count);\n"
+        "    set_eax(c, h);",
         "[reflex-thread] CreateThread start=",
     )
 
