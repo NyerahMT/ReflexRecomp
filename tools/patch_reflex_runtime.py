@@ -122,6 +122,22 @@ def main() -> None:
     )
 
     kernel32 = KIT / "runtime" / "kernel32.cpp"
+    # Trace thread creation and database/loader wakeups at warning level,
+    # independently of the very noisy per-import RECOMP_LOG=2. This lets
+    # the boot probe identify missing resource-worker scheduling.
+    replace_once(
+        kernel32,
+        '    LOGV("CreateThread(%08x, param=%08x, flags=%08x) -> handle %08x id %u", start, param, flags, h,\\n'
+        '          t->id);\\n'
+        '    set_eax(c, h);',
+        '    LOGV("CreateThread(%08x, param=%08x, flags=%08x) -> handle %08x id %u", start, param, flags, h,\\n'
+        '          t->id);\\n'
+        '    fprintf(stderr, "[reflex-thread] CreateThread start=%08x param=%08x flags=%08x handle=%08x tid=%u suspended=%d\\\\n",\\n'
+        '            start, param, flags, h, t->id, t->suspend_count);\\n'
+        '    set_eax(c, h);',
+        "[reflex-thread] CreateThread start=",
+    )
+
     replace_once(
         kernel32,
         "void create_event_named(X86 *c, const std::string &name) {\n"
@@ -168,7 +184,7 @@ def main() -> None:
         "    const uint32_t h = arg(c, 0);\n"
         "    HObj *o = handle_get(h, H_EVENT);\n"
         "    const uint32_t reflex_h = gm_valid(0x00d67ce8u, 4) ? rd32(0x00d67ce8u) : 0u;\n"
-        "    const bool trace = !o || h == reflex_h || (o && o->object_name == \"FMODQueueProcessEvent\");\n"
+        "    const bool trace = !o || h == reflex_h || (o && (o->object_name == \"FMODQueueProcessEvent\" || o->object_name == \"DatabaseThreadEvent\" || o->object_name == \"LoadingThreadEvent\" || o->object_name == \"CacheThreadEvent\"));\n"
         "    if (trace)\n"
         "        fprintf(stderr, \"[reflex-sync] SetEvent handle=%08x guest_global=%08x valid=%u signalled_before=%u\\n\",\n"
         "                h, reflex_h, o ? 1u : 0u, (o && o->signalled) ? 1u : 0u);\n"
@@ -222,7 +238,7 @@ def main() -> None:
         "            before = queue;\n"
         "        }\n"
         "    }\n"
-        "    const bool trace = !before || h == reflex_h || (before && before->object_name == \"FMODQueueProcessEvent\");\n"
+        "    const bool trace = !before || h == reflex_h || (before && (before->object_name == \"FMODQueueProcessEvent\" || before->object_name == \"DatabaseThreadEvent\" || before->object_name == \"LoadingThreadEvent\" || before->object_name == \"CacheThreadEvent\"));\n"
         "    if (trace)\n"
         "        fprintf(stderr, \"[reflex-sync] WaitForSingleObject enter tid=%u handle=%08x guest_global=%08x valid=%u kind=%d timeout=%08x signalled=%u handles=%zu\\n\",\n"
         "                cur_thread_id(), h, reflex_h, before ? 1u : 0u, before ? (int)before->kind : -1,\n"
@@ -253,7 +269,7 @@ def main() -> None:
         "    uint32_t h = arg(c, 0);\n"
         "    HObj *o = handle_any(h);\n"
         "    const uint32_t reflex_h = gm_valid(0x00d67ce8u, 4) ? rd32(0x00d67ce8u) : 0u;\n"
-        "    if (h == reflex_h || (o && o->object_name == \"FMODQueueProcessEvent\"))\n"
+        "    if (h == reflex_h || (o && (o->object_name == \"FMODQueueProcessEvent\" || o->object_name == \"DatabaseThreadEvent\" || o->object_name == \"LoadingThreadEvent\" || o->object_name == \"CacheThreadEvent\")))\n"
         "        fprintf(stderr, \"[reflex-sync] CloseHandle handle=%08x guest_global=%08x valid=%u kind=%d refs=%u handles=%zu\\n\",\n"
         "                h, reflex_h, o ? 1u : 0u, o ? (int)o->kind : -1, o ? o->references : 0u, handles().size());\n"
         "    if (!o) {\n"
