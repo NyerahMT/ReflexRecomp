@@ -73,12 +73,17 @@ def main():
                 lock_addr64 >= 0x10000u &&
                 lock_addr64 + 4u <= GUEST_SIZE
                 ? rd32((uint32_t)lock_addr64) : 0u;
+            // Function 008814a0 writes the parsed language-file enum
+            // to this guest global at 0088178d or clears it at 00881794.
+            const uint32_t locale_id = rd32(0x00a94078u);
             fprintf(stderr,
                     "[reflex-ui-lookup] call=%llu ret=%08x this=%08x "
-                    "arg0=%08x arg1=%08x eax=%08x esi=%08x edi=%08x lock_count=%08x\\n",
+                    "arg0=%08x arg1=%08x eax=%08x esi=%08x edi=%08x "
+                    "lock_count=%08x locale_id=%08x\\n",
                     (unsigned long long)ui_n, trace_ret, c->r[R_ECX],
                     rd32(trace_esp + 4), rd32(trace_esp + 8),
-                    c->r[R_EAX], c->r[R_ESI], c->r[R_EDI], lock_count);
+                    c->r[R_EAX], c->r[R_ESI], c->r[R_EDI],
+                    lock_count, locale_id);
         }
     }
 
