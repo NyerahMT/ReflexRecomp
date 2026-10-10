@@ -80,7 +80,12 @@ jobs:
           config_sha="$(cat tools/analyze.py game.toml | sha256sum | awk '{print $1}')"
           asset="Reflex-Baseline-${REFLEX_SHA256:0:12}-g${GHIDRA_VERSION}-k${KIT_REV:0:12}-c${config_sha:0:12}-p${TRANSLATE_POLICY_REV}.tar.gz"
           echo "BASELINE_ASSET=$asset" >> "$GITHUB_ENV"
+          # Stable across runtime edits; ccache fingerprints each compilation
+          # input independently. Cached guest code stays in a private release.
+          warm="Reflex-WarmCCache-${REFLEX_SHA256:0:12}-g${GHIDRA_VERSION}-k${KIT_REV:0:12}-c${config_sha:0:12}-p${TRANSLATE_POLICY_REV}.tar.gz"
+          echo "WARM_CCACHE_ASSET=$warm" >> "$GITHUB_ENV"
           echo "Looking for private baseline: $asset"
+          echo "Looking for private warmed compiler cache: $warm"
 
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
@@ -175,6 +180,27 @@ jobs:
           cp build/recomp/gen/symbols.json build/recomp/symbols.json
           test -f build/recomp/symbols.json
           test -d "$CCACHE_DIR"
+
+          # The translation baseline carries only its original compiler cache.
+          # Restore more recent, warmed objects from the *private* release.
+          mkdir -p "$RUNNER_TEMP/reflex-warm-ccache"
+          if gh release download "$BASELINE_TAG" \
+              --repo "$INPUT_REPO" \
+              --pattern "$WARM_CCACHE_ASSET" \
+              --dir "$RUNNER_TEMP/reflex-warm-ccache" \
+              --clobber && \
+              test -s "$RUNNER_TEMP/reflex-warm-ccache/$WARM_CCACHE_ASSET"; then
+            if tar -tzf "$RUNNER_TEMP/reflex-warm-ccache/$WARM_CCACHE_ASSET" \
+                >/dev/null; then
+              tar -xzf "$RUNNER_TEMP/reflex-warm-ccache/$WARM_CCACHE_ASSET" \
+                -C "$GITHUB_WORKSPACE"
+              echo "Restored warmed compiler cache from private build input"
+            else
+              echo "::warning::Private warmed ccache archive is invalid; using original baseline cache"
+            fi
+          else
+            echo "::notice::No warmed compiler cache found yet; a successful build will prime it if REFLEX_INPUT_TOKEN has private-repo write access"
+          fi
           ccache --max-size 1G
           ccache --zero-stats
 
@@ -224,6 +250,26 @@ jobs:
           test -x build/package/ReflexRecomp/ReflexRecomp
           ldd build/package/ReflexRecomp/ReflexRecomp | tee build/logs/host-ldd.txt
           ccache --show-stats | tee build/logs/ccache-after-build.txt
+
+      - name: Preserve warmed compiler cache in private build input
+        if: steps.host.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -d "$CCACHE_DIR"
+          # Save after host compilation even if the guest runtime later fails.
+          # Game-derived object files must never appear in public artifacts.
+          mkdir -p "$RUNNER_TEMP/reflex-warm-upload"
+          archive="$RUNNER_TEMP/reflex-warm-upload/$WARM_CCACHE_ASSET"
+          tar -czf "$archive" -C "$GITHUB_WORKSPACE" ".ci-cache/ccache"
+          echo "Private compiler cache archive: $(du -h "$archive" | awk '{print $1}')"
+          if gh release upload "$BASELINE_TAG" "$archive" \
+              --repo "$INPUT_REPO" --clobber; then
+            echo "Saved warmed compiler cache to private build input"
+          else
+            echo "::warning::Could not save warmed compiler cache to private build input. REFLEX_INPUT_TOKEN needs Contents: write permission; future runs will still work with the original baseline cache."
+          fi
 
       - name: Probe Reflex runtime gate
         id: boot
