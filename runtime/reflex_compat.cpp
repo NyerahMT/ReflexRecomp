@@ -2194,6 +2194,29 @@ bool msvcp_string_assign_value(uint32_t self, const std::string &value) {
     return true;
 }
 
+// VS2008 basic_string copy assignment uses x86 thiscall (ECX=this,
+// one callee-cleaned const basic_string& stack argument).
+// Snapshot first: the destination's old heap allocation may be released.
+bool msvcp_string_assign_from(uint32_t self, uint32_t src) {
+    if (!self || !src || !gm_valid(self, 24) || !gm_valid(src, 24))
+        return false;
+    if (self == src)
+        return true;
+    const uint32_t n = rd32(src + 16);
+    const uint32_t capacity = rd32(src + 20);
+    const uint32_t data = msvcp_string_data(src);
+    if (n > 0x0fffffffu || n > capacity ||
+        !data || !gm_valid(data, n + 1u))
+        return false;
+    const std::string snapshot(reinterpret_cast<const char *>(g_mem + data), n);
+    return msvcp_string_assign_value(self, snapshot);
+}
+
+void msvcp_string_assign_copy(X86 *c) {
+    const uint32_t self = c->r[R_ECX];
+    set_eax(c, msvcp_string_assign_from(self, arg(c, 0)) ? self : 0);
+}
+
 void msvcp_string_assign_cstr(X86 *c) {
     const uint32_t self = c->r[R_ECX];
     const std::string value = gm_str(arg(c, 0), 0x100000);
@@ -2549,6 +2572,9 @@ const ImportShim k_reflex_shims[] = {
      "?swap@?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEXAAV12@@Z",
      1, msvcp_string_swap},
 
+    {"MSVCP90.dll",
+     "??4?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEAAV01@ABV01@@Z",
+     1, msvcp_string_assign_copy},
     {"MSVCP90.dll",
      "??4?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEAAV01@PBD@Z",
      1, msvcp_string_assign_cstr},

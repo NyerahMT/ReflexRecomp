@@ -42,6 +42,14 @@ def test_crt_exports_use_cdecl_except_known_thiscall_type_info():
         assert count == ("1" if name == thiscall else "ARGC_CDECL"), name
 
 
+def test_msvcp90_string_assignment_copy_has_thiscall_abi():
+    registry = {(dll.lower(), name): (argc, handler)
+                for dll, name, argc, handler in records()}
+    assert registry[("msvcp90.dll", "??4?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@QAEAAV01@ABV01@@Z")] == (
+        "1", "msvcp_string_assign_copy"
+    )
+
+
 def test_xinput_ordinals_and_d3dx_signatures_are_nonvariadic_stdcall():
     registry = {(dll.lower(), name.lower()): count
                 for dll, name, count, _handler in records()}

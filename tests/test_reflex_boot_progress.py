@@ -24,6 +24,18 @@ class BootProgressTests(unittest.TestCase):
         self.assertEqual(result.status, "ui_lookup_stalled")
         self.assertGreaterEqual(result.comparisons, 1_000_000)
 
+    def test_guest_failure_after_intro_match_is_not_success(self):
+        log = "\n".join([
+            sample(256, "Intro.ENG", 0),
+            "[reflex-intro-probe] exact Intro. -> Intro.ENG match count=1",
+            "[recomp] TerminateProcess(3221226505)",
+            "[recomp] guest process exited with code 3221226505",
+        ])
+        result = module.classify_log(log)
+        self.assertEqual(result.status, "guest_terminated")
+        self.assertEqual(result.comparisons, 256)
+        self.assertIn("0xc0000409", result.reason)
+
     def test_does_not_fail_legitimate_resource_lookups(self):
         log = "\n".join(sample(2 ** i, "Intro.ENG", 0)
                         for i in range(2, 22))

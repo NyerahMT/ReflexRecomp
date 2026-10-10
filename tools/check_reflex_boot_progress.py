@@ -32,6 +32,18 @@ class ProgressResult:
 def classify_log(contents: str) -> ProgressResult:
     samples = [(int(count), key, int(result))
                for count, key, result in HOT_SAMPLE.findall(contents)]
+    # A native host exit status of zero is not proof of successful guest
+    # startup: the guest may have called TerminateProcess(error).
+    terminated = re.search(
+        r"\[recomp\] (?:TerminateProcess\(|guest process exited with code )(\d+)",
+        contents,
+    )
+    if terminated and int(terminated.group(1)) != 0:
+        code = int(terminated.group(1))
+        return ProgressResult(
+            "guest_terminated", max((count for count, _, _ in samples), default=0),
+            0, f"Guest exited with code {code} (0x{code:08x})"
+        )
     if not samples:
         return ProgressResult("unknown", 0, 0, "No UI lookup samples reached")
     last = samples[-8:]
