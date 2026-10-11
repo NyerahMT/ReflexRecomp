@@ -23,7 +23,7 @@ CPP = r"""
 int main() {
     const auto &vs = reflex_ffp::quad_vs();
     const auto &ps = reflex_ffp::quad_ps();
-    assert(vs.size() == 27u * 4u); // version, dcls, three ops, END
+    assert(vs.size() == 25u * 4u); // version, dcls, three ops, END
     assert(ps.size() == 15u * 4u);
     assert(vs[0] == 0 && vs[1] == 3 && vs[2] == 0xfe && vs[3] == 0xff);
     assert(ps[0] == 0 && ps[1] == 3 && ps[2] == 0xff && ps[3] == 0xff);
