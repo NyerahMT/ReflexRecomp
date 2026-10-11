@@ -57,7 +57,8 @@ jobs:
           python3 tools/frontier_context.py \
             --quick \
             analysis/decompiled/MXReflex.exe \
-            005daca0 005daeb1 005daee9 005daef0 005daf00 005daf02 005daf08 005daf20 \
+            00543cd0 00543d00 00543d30 00543d60 00543d90 00543dc0 \
+            005dbe50 005dbe99 005dbec8 005dbed3 005dbee7 005dbefb \
             | tee build/logs/frontier-context.txt
 
       - name: Upload frontier context
