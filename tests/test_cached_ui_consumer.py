@@ -18,10 +18,9 @@ def fixture():
         'typedef struct X86 { uint32_t r[8]; } X86;\n'
         '#define GUEST_SIZE (0x20000000u)\n'
         'static uint32_t rd32(uint32_t addr) { (void)addr; return 0; }\n'
-        'static void body_005dbe50(X86 *c, uint32_t entry_) {\n'
-        '    (void)c; (void)entry_;\n'
+        'void fn_005dbe50(X86 *c) {\n'
+        '    (void)c;\n'
         '}\n'
-        'void fn_005dbe50(X86 *c) { body_005dbe50(c, 0u); }\n'
     )
 
 

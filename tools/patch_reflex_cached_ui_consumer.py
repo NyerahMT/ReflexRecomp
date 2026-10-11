@@ -14,11 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 GENERATED = ROOT / "build/recomp/gen"
 MARKER = "reflex-ui-consumer-entry-v1"
 ANCHOR = re.compile(
-    r"(?m)^([ \t]*)static void body_005dbe50\(X86 \*c, uint32_t entry_\) \{\n"
+    r"(?m)^([ \t]*)void fn_005dbe50\(X86 \*c\) \{\n"
 )
 TRACE = r"""
     /* reflex-ui-consumer-entry-v1: original guest 005dbe50 call trace. */
-    if (entry_ == 0u) {
+    {
         static unsigned long long n = 0u;
         const unsigned long long count =
             __atomic_add_fetch(&n, 1u, __ATOMIC_RELAXED);
