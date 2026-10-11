@@ -57,7 +57,7 @@ def patch_gates(generated: Path) -> Path:
 {indent}        const uint32_t state = state_ok ? rd32(esi + 0x24u) : 0u;
 {indent}        fprintf(stderr,
 {indent}                "[reflex-resource-gate] site={gate} n=%llu local=%08x edi=%08x equal=%u "
-{indent}                "esi=%08x state24=%08x state_zero=%u sp=%08x eax=%08x\\\\n",
+{indent}                "esi=%08x state24=%08x state_zero=%u sp=%08x eax=%08x\\n",
 {indent}                count, local, edi, (unsigned)(local == edi),
 {indent}                esi, state, (unsigned)(state == 0u), sp, c->r[0]);
 {indent}    }}
