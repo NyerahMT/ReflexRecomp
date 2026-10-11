@@ -69,4 +69,9 @@ def test_partial_reinstall_is_rejected(tmp_path):
 
 
 def test_pc_sources_are_original_instruction_boundaries():
-    assert probe.SITES == ("0084a81d", "0084a837", "0084a83a")
+    assert probe.SITES == ("0084a81d", "0084a837", "0084a83a", "0084a873", "0084a87b")
+
+
+def test_resource_lookup_vs_status_trace_coverage():
+    assert "0084a873" in probe.SITES  # resource pointer from vtable+0x20
+    assert "0084a87b" in probe.SITES  # resource +0x94 status result
