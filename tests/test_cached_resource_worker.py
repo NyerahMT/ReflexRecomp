@@ -87,7 +87,7 @@ def test_generated_instrumentation_compiles_as_c11(tmp_path):
     header = """#include <stdint.h>
 #define GUEST_SIZE (0x10000000u)
 typedef struct X86 { uint32_t r[8]; } X86;
-static uint32_t rd32(uint32_t offset) { return offset; }
+#define rd32(offset) (offset)
 static void synthetic_instruction(void) {}
 """
     for i, chunk_path in enumerate(sorted(gen.glob("chunk_*.c"))):
