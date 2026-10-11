@@ -39,7 +39,7 @@ def main():
                 && (uint64_t)trace_esp + 12u <= GUEST_SIZE;
             fprintf(stderr,
                     "[reflex-finalizer-call] phase=%s n=%llu site=%08x "
-                    "target=%08x this=%08x arg0=%08x arg1=%08x\n",
+                    "target=%08x this=%08x arg0=%08x arg1=%08x\\n",
                     is_load ? "load" : "query",
                     (unsigned long long)n, trace_ret, target,
                     c->r[R_ECX],
