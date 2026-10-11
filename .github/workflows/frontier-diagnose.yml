@@ -59,6 +59,7 @@ jobs:
             analysis/decompiled/MXReflex.exe \
             00543cd0 00543d00 00543d30 00543d60 00543d90 00543dc0 \
             00544220 00544240 00544260 00544280 005442a0 005442c0 00544300 00544340 \
+            005449d0 005449f0 00544a10 00544a30 00544a50 00544a70 00544a90 \
             005dbe50 005dbe99 005dbec8 005dbed3 005dbee7 005dbefb \
             | tee build/logs/frontier-context.txt
 
