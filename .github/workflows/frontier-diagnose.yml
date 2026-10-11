@@ -65,7 +65,7 @@ jobs:
             00543b30 00543b50 00543b70 00543b90 00543bb0 00543bd0 00543c00 \
             005dbcb0 005dbcd0 005dbd00 005dbd30 005dbd60 005dbd90 005dbdc0 005dbdf0 \
             005dbe50 005dbe99 005dbec8 005dbed3 005dbee7 005dbefb \
-            007ae430 007ae450 007ae470 007ae490 007ae4a0 007ae4a9 007ae4b0 007ae4d0 007ae500 \
+            007ae3a0 007ae3c0 007ae3e0 007ae400 007ae420 007ae430 007ae450 007ae470 007ae490 007ae4a0 007ae4a9 007ae4b0 007ae4d0 007ae500 \
             | tee build/logs/frontier-context.txt
 
       - name: Upload frontier context
