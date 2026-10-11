@@ -8,6 +8,7 @@
 #include "memory.h"
 #include "reflex_crt_numeric.h"
 #include "reflex_crt_wide_format.h"
+#include "reflex_crt_termination.h"
 
 #include <algorithm>
 #include <atomic>
@@ -67,6 +68,21 @@ void reflex_steam_register_callback(X86 *c) {
 void reflex_steam_user_stats(X86 *c) {
     // No Steam backend is attached to the recompiled process yet.
     set_eax(c, 0);
+}
+
+void reflex_steam_run_callbacks(X86 *c) {
+    // Offline port: there is no Steam callback pump. Preserve the cdecl ABI.
+    set_eax(c, 0);
+}
+
+void reflex_steam_shutdown(X86 *c) {
+    // Offline port: SteamAPI_Init does not acquire a live Steam session.
+    set_eax(c, 0);
+}
+
+[[noreturn]] void crt_quick_exit(X86 *c) {
+    // MSVCR90 _exit(int): do not resume guest execution or run atexit handlers.
+    reflex_crt::quick_exit(static_cast<uint32_t>(arg(c, 0)));
 }
 
 void crt_memcpy(X86 *c) {
@@ -2561,6 +2577,8 @@ const ImportShim k_reflex_shims[] = {
     {"steam_api.dll", "SteamAPI_RegisterCallback", ARGC_CDECL,
      reflex_steam_register_callback},
     {"steam_api.dll", "SteamUserStats", ARGC_CDECL, reflex_steam_user_stats},
+    {"steam_api.dll", "SteamAPI_RunCallbacks", ARGC_CDECL, reflex_steam_run_callbacks},
+    {"steam_api.dll", "SteamAPI_Shutdown", ARGC_CDECL, reflex_steam_shutdown},
 
     // Visual C++ 2008 CRT. Explicit cdecl registration is important even for
     // logging-only entries: it prevents the import dispatcher from treating
@@ -2570,6 +2588,7 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "__p__commode", ARGC_CDECL, crt_p_commode},
     {"MSVCR90.dll", "_controlfp_s", ARGC_CDECL, crt_controlfp_s},
     {"MSVCR90.dll", "_onexit", ARGC_CDECL, crt_onexit},
+    {"MSVCR90.dll", "_exit", ARGC_CDECL, crt_quick_exit},
     {"MSVCR90.dll", "__getmainargs", ARGC_CDECL, crt_getmainargs},
     {"MSVCR90.dll", "__iob_func", ARGC_CDECL, crt_iob_func},
     {"MSVCR90.dll", "_snprintf", ARGC_CDECL, crt_snprintf},

@@ -42,7 +42,7 @@ def main() -> None:
     stage_compat_headers(KIT / "runtime")
     # The SIMD decoder is a separately linked guest CPU helper. Both its
     # declaration and implementation must be staged into the pinned kit.
-    for filename in ("reflex_packed_sse.h", "reflex_packed_sse.cpp"):
+    for filename in ("reflex_crt_termination.h", "reflex_packed_sse.h", "reflex_packed_sse.cpp"):
         source = ROOT / "runtime" / filename
         if not source.is_file():
             raise SystemExit(f"missing {source}")
