@@ -59,7 +59,7 @@ def test_native_frame_samples(tmp_path):
     ppm = tmp_path / "preview.ppm"
     subprocess.run([str(binary), str(ppm)], check=True, capture_output=True, text=True)
     payload = ppm.read_bytes()
-    prefix = b"P6\\n10 10\\n255\\n"
+    prefix = b"P6\n10 10\n255\n"
     assert payload.startswith(prefix)
     assert len(payload) == len(prefix) + 300
     assert payload[len(prefix)] == 255
