@@ -20,7 +20,8 @@ CPP = r"""
 #include "reflex_frame_rgb.h"
 #include <cassert>
 #include <vector>
-int main() {
+int main(int argc, char **argv) {
+    assert(argc >= 2);
     std::vector<uint8_t> pixels(100 * 3);
     reflex_d3d9::FrameStats s;
     assert(reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, &s));
@@ -40,6 +41,10 @@ int main() {
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 8193, 10, &s));
     assert(!reflex_d3d9::frame_stats(nullptr, pixels.size(), 10, 10, &s));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, nullptr));
+    assert(reflex_d3d9::write_frame_ppm(argv[1], pixels.data(), pixels.size(), 10, 10));
+    assert(!reflex_d3d9::write_frame_ppm(argv[1], pixels.data(), pixels.size()-1, 10, 10));
+    assert(!reflex_d3d9::write_frame_ppm(argv[1], pixels.data(), pixels.size(), 0, 10));
+    assert(!reflex_d3d9::write_frame_ppm(argv[1], pixels.data(), pixels.size(), 5000, 10));
 }
 """
 
@@ -51,7 +56,13 @@ def test_native_frame_samples(tmp_path):
     subprocess.run([cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror",
                     "-I", str(ROOT / "runtime"), str(source), "-o", str(binary)],
                    check=True, capture_output=True, text=True)
-    subprocess.run([str(binary)], check=True, capture_output=True, text=True)
+    ppm = tmp_path / "preview.ppm"
+    subprocess.run([str(binary), str(ppm)], check=True, capture_output=True, text=True)
+    payload = ppm.read_bytes()
+    prefix = b"P6\\n10 10\\n255\\n"
+    assert payload.startswith(prefix)
+    assert len(payload) == len(prefix) + 300
+    assert payload[len(prefix)] == 255
 
 def test_pinned_probe_patch_idempotent_and_safe(tmp_path):
     original = ROOT / "kit" / "dx" / "d3d9.cpp"

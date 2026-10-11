@@ -76,13 +76,25 @@ def patch_frame_probe(kit: Path, runtime: Path) -> None:
                 rgb.data(), uint32_t(rgb.size()), &w, &h);
             reflex_d3d9::FrameStats st;
             if (read && reflex_d3d9::frame_stats(
-                    rgb.data(), rgb.size(), w, h, &st))
+                    rgb.data(), rgb.size(), w, h, &st)) {
                 LOGW("[reflex-frame] rgb n=%llu size=%ux%u sampled=%u lit=%u hash=%016llx",
                      n, w, h, st.sampled, st.nonblack,
                      static_cast<unsigned long long>(st.hash));
-            else
+                // Save at most four full readbacks; logs retain the other
+                // sampled frames. Actions uploads build/logs/ as an artifact.
+                if (n == 1u || n == 8u || n == 64u || n == 256u) {
+                    char filename[80];
+                    std::snprintf(filename, sizeof filename,
+                                  "build/logs/reflex-frame-%04llu.ppm", n);
+                    const bool saved = reflex_d3d9::write_frame_ppm(
+                        filename, rgb.data(), rgb.size(), w, h);
+                    LOGW("[reflex-frame] capture n=%llu saved=%u path=%s",
+                         n, saved ? 1u : 0u, filename);
+                }
+            } else {
                 LOGW("[reflex-frame] rgb-unavailable n=%llu rc=%d size=%ux%u",
                      n, read, w, h);
+            }
         }
         ddraw_external_present_end();''', "GPU present/readback")
 
