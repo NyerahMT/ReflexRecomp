@@ -19,6 +19,7 @@ on:
       - "tools/patch_reflex_cached_simd.py"
       - "tools/patch_reflex_cached_ui_queue.py"
       - "tools/patch_reflex_cached_ui_lookup.py"
+      - "tools/patch_reflex_cached_ui_boolean.py"
       - "tools/audit_translation_traps.py"
       - "tools/check_reflex_boot_progress.py"
       - "tools/patch_reflex_interp.py"
@@ -231,6 +232,7 @@ jobs:
           python3 tools/patch_reflex_cached_simd.py
           python3 tools/patch_reflex_cached_ui_queue.py
           python3 tools/patch_reflex_cached_ui_lookup.py
+          python3 tools/patch_reflex_cached_ui_boolean.py
 
       # Record *all* still-untranslated opcodes for preventative fixes.
       # This is diagnostic only; an unreachable trap is not a boot failure.
@@ -344,7 +346,7 @@ jobs:
           set -e
           echo "$rc" > build/logs/runtime-intro-probe-exit.txt
           echo "Diagnostic Intro-key probe exit: $rc"
-          grep -E '\[reflex-intro-probe\]|\[reflex-ui-result\]|\[reflex-ui-lookup\]|SEH: unhandled|call to unknown target' \
+          grep -E '\[reflex-intro-probe\]|\[reflex-ui-boolean\]|\[reflex-ui-result\]|\[reflex-ui-lookup\]|SEH: unhandled|call to unknown target' \
             build/logs/runtime-intro-probe.log | tail -n 60 || true
           python3 tools/check_reflex_boot_progress.py \
             build/logs/runtime-intro-probe.log \
