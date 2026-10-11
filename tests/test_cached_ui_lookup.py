@@ -35,6 +35,9 @@ def test_trace_is_idempotent_and_c11(tmp_path):
     assert mod.patch_lookup(gen) == chunk
     saved = chunk.read_text()
     assert saved.count(mod.MARKER) == 2
+    # Generated C must emit a real log line ending, not literal backslash-n.
+    assert r'result=%08x\n"' in saved
+    assert r'result=%08x\\n"' not in saved
     assert mod.patch_lookup(gen) == chunk
     assert chunk.read_text() == saved
     cc = shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")

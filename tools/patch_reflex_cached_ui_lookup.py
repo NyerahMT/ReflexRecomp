@@ -38,7 +38,7 @@ def patch_lookup(generated: Path) -> Path:
 {indent}    if (sample <= 16u || (sample & (sample - 1u)) == 0u) {{
 {indent}        const uint32_t sp = c->r[4];
 {indent}        const uint32_t good = sp >= 0x10000u && (uint64_t)sp + 12u <= GUEST_SIZE;
-{indent}        fprintf(stderr, "[reflex-ui-result] path={site} n=%llu caller=%08x key1=%08x key2=%08x result=%08x\\\\n",
+{indent}        fprintf(stderr, "[reflex-ui-result] path={site} n=%llu caller=%08x key1=%08x key2=%08x result=%08x\\n",
 {indent}                sample, good ? rd32(sp) : 0u,
 {indent}                good ? rd32(sp + 4u) : 0u,
 {indent}                good ? rd32(sp + 8u) : 0u, c->r[0]);

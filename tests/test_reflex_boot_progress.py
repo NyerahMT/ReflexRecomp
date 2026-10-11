@@ -36,6 +36,17 @@ class BootProgressTests(unittest.TestCase):
         self.assertEqual(result.comparisons, 256)
         self.assertIn("0xc0000409", result.reason)
 
+    def test_stalled_lookup_detected_after_escaped_diagnostic_newline(self):
+        log = "".join(
+            f'[reflex-ui-result] path=0d n={2 ** i} result=00000000\\n'
+            + sample(2 ** i, "Intro." if i % 2 == 0 else "Intro")
+            + "\n"
+            for i in range(2, 22)
+        )
+        result = module.classify_log(log)
+        self.assertEqual(result.status, "ui_lookup_stalled")
+        self.assertGreaterEqual(result.comparisons, 1_000_000)
+
     def test_does_not_fail_legitimate_resource_lookups(self):
         log = "\n".join(sample(2 ** i, "Intro.ENG", 0)
                         for i in range(2, 22))

@@ -15,8 +15,11 @@ import re
 from pathlib import Path
 
 
+# Do not require a line boundary: an unrelated guest tracing shim once
+# escaped its newline twice and prefixed these samples with literal "\\n".
+# A corrupted diagnostic line must never turn a known startup stall green.
 HOT_SAMPLE = re.compile(
-    r'^\[reflex-stricmp\] call=(\d+) ret=0084a8f0 '
+    r'\[reflex-stricmp\] call=(\d+) ret=0084a8f0 '
     r'lhs=[0-9a-fA-F]+ "[^"]*" rhs=[0-9a-fA-F]+ "([^"]*)" rc=(-?\d+)',
     re.MULTILINE,
 )
