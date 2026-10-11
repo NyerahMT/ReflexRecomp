@@ -87,7 +87,7 @@ def patch_stages(generated: Path) -> list[Path]:
 {indent}    if (n <= 8u || (n & (n - 1u)) == 0u) {{
 {indent}        fprintf(stderr,
 {indent}                "[reflex-first-loader] pc={pc} n=%llu eax=%08x ebx=%08x ecx=%08x "
-{indent}                "esi=%08x edi=%08x esp=%08x\\\\n",
+{indent}                "esi=%08x edi=%08x esp=%08x\\n",
 {indent}                (unsigned long long)n,
 {indent}                c->r[0], c->r[3], c->r[1], c->r[6], c->r[7], c->r[4]);
 {indent}    }}
