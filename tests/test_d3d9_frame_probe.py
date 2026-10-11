@@ -20,7 +20,8 @@ CPP = r"""
 #include "reflex_frame_rgb.h"
 #include <cassert>
 #include <vector>
-int main() {
+int main(int argc, char **argv) {
+    assert(argc >= 2);
     std::vector<uint8_t> pixels(100 * 3);
     reflex_d3d9::FrameStats s;
     assert(reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, &s));
@@ -29,11 +30,21 @@ int main() {
     pixels[0] = 255;
     assert(reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, &s));
     assert(s.nonblack == 1 && s.hash != old);
+    const uint64_t sampled[] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
+    for (uint64_t n : sampled)
+        assert(reflex_d3d9::should_readback(n));
+    const uint64_t skipped[] = {0, 3, 5, 7, 9, 255, 257, 512, 65536};
+    for (uint64_t n : skipped)
+        assert(!reflex_d3d9::should_readback(n));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size()-1, 10, 10, &s));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 0, 10, &s));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 8193, 10, &s));
     assert(!reflex_d3d9::frame_stats(nullptr, pixels.size(), 10, 10, &s));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, nullptr));
+    assert(reflex_d3d9::write_frame_ppm(argv[1], pixels.data(), pixels.size(), 10, 10));
+    assert(!reflex_d3d9::write_frame_ppm(argv[1], pixels.data(), pixels.size()-1, 10, 10));
+    assert(!reflex_d3d9::write_frame_ppm(argv[1], pixels.data(), pixels.size(), 0, 10));
+    assert(!reflex_d3d9::write_frame_ppm(argv[1], pixels.data(), pixels.size(), 5000, 10));
 }
 """
 
@@ -45,7 +56,13 @@ def test_native_frame_samples(tmp_path):
     subprocess.run([cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror",
                     "-I", str(ROOT / "runtime"), str(source), "-o", str(binary)],
                    check=True, capture_output=True, text=True)
-    subprocess.run([str(binary)], check=True, capture_output=True, text=True)
+    ppm = tmp_path / "preview.ppm"
+    subprocess.run([str(binary), str(ppm)], check=True, capture_output=True, text=True)
+    payload = ppm.read_bytes()
+    prefix = b"P6\n10 10\n255\n"
+    assert payload.startswith(prefix)
+    assert len(payload) == len(prefix) + 300
+    assert payload[len(prefix)] == 255
 
 def test_pinned_probe_patch_idempotent_and_safe(tmp_path):
     original = ROOT / "kit" / "dx" / "d3d9.cpp"
@@ -81,3 +98,18 @@ def test_metrics_never_invent_frames():
     assert data["presents"] == 4
     assert data["last_fvf"] == "00000144"
     assert data["rgb"]["lit"] == 6
+
+
+def test_first_nonblack_sample_is_not_lost():
+    data = analysis.measure(
+        "[reflex-frame] rgb n=1 size=1280x720 sampled=9502 lit=0 hash=aa11\n"
+        "[reflex-frame] rgb n=2 size=1280x720 sampled=9502 lit=0 hash=aa11\n"
+        "[reflex-frame] rgb n=8 size=1280x720 sampled=9502 lit=77 hash=cd12\n"
+        "[reflex-frame] rgb n=16 size=1280x720 sampled=9502 lit=0 hash=aa11\n")
+    assert data["readbacks"] == 4
+    assert data["first_nonblack"]["present"] == 8
+    assert data["first_nonblack"]["lit"] == 77
+    assert data["rgb"]["present"] == 16
+    empty = analysis.measure("[reflex-frame] present n=64 bb=4 size=1280x720 gpu=1")
+    assert empty["first_nonblack"] is None
+    assert empty["readbacks"] == 0

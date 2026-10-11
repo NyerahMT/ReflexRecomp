@@ -11,7 +11,8 @@ RGB = re.compile(r"\[reflex-frame\] rgb n=(\d+) size=(\d+)x(\d+) sampled=(\d+) l
 
 def measure(log):
     data = {"last_draw": None, "presents": None, "shaderless_skips": None,
-            "last_fvf": None, "rgb": None}
+            "last_fvf": None, "rgb": None, "first_nonblack": None,
+            "readbacks": 0}
     for line in log.splitlines():
         if m := DRAW.search(line):
             data["last_draw"] = max(data["last_draw"] or 0, int(m[1]))
@@ -21,8 +22,11 @@ def measure(log):
             data["shaderless_skips"] = max(data["shaderless_skips"] or 0, int(m[1]))
             data["last_fvf"] = m[2].lower()
         if m := RGB.search(line):
+            data["readbacks"] += 1
             data["rgb"] = {"present": int(m[1]), "size": f"{m[2]}x{m[3]}",
                            "samples": int(m[4]), "lit": int(m[5]), "hash": m[6].lower()}
+            if int(m[5]) > 0 and data["first_nonblack"] is None:
+                data["first_nonblack"] = data["rgb"]
     return data
 
 def main():

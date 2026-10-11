@@ -2,7 +2,14 @@
 // Portable, read-only RGB frame sampling for opt-in D3D9 bring-up evidence.
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 namespace reflex_d3d9 {
+// Sample first frames and exponentially spaced later frames: 9 readbacks at
+// most, independent of FPS or a long-running render loop.
+inline bool should_readback(uint64_t presented) noexcept {
+    return presented != 0u && presented <= 256u &&
+           (presented <= 2u || (presented & (presented - 1u)) == 0u);
+}
 struct FrameStats {
     uint32_t sampled = 0, nonblack = 0;
     uint64_t hash = UINT64_C(1469598103934665603);
@@ -25,6 +32,25 @@ inline bool frame_stats(const uint8_t *rgb, size_t cap, uint32_t w, uint32_t h,
         }
     }
     *result = out;
+    return true;
+}
+// Save only bounded host-side readback bytes, never dump game resources or
+// guest allocations. P6 PPM is directly convertible to PNG for inspection.
+inline bool write_frame_ppm(const char *filename, const uint8_t *rgb,
+                            size_t cap, uint32_t w, uint32_t h) noexcept {
+    if (!filename || !rgb || !w || !h || w > 4096u || h > 4096u ||
+        uint64_t(w) * h * 3u > cap || uint64_t(w) * h * 3u > 12u * 1024u * 1024u)
+        return false;
+    std::FILE *fp = std::fopen(filename, "wb");
+    if (!fp) return false;
+    const size_t needed = size_t(w) * h * 3u;
+    const bool success = std::fprintf(fp, "P6\n%u %u\n255\n", w, h) > 0 &&
+                         std::fwrite(rgb, 1, needed, fp) == needed;
+    const int closed = std::fclose(fp);
+    if (!success || closed != 0) {
+        std::remove(filename);
+        return false;
+    }
     return true;
 }
 } // namespace reflex_d3d9
