@@ -76,7 +76,7 @@ def patch_loading_stages(generated: Path) -> Path:
 {indent}        fprintf(stderr,
 {indent}                "[reflex-load-stage] pc={pc} n=%llu ebx=%08x "
 {indent}                "esp=%08x eax=%08x ecx=%08x status_event=%08x "
-{indent}                "worker_event=%08x\\\\n",
+{indent}                "worker_event=%08x\\n",
 {indent}                (unsigned long long)n, ebx, sp,
 {indent}                c->r[0], c->r[1],
 {indent}                object_ok ? rd32(ebx + 0x161f4u) : 0u,
