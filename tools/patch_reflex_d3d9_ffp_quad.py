@@ -46,7 +46,7 @@ def patch_ffp_quad(kit: Path, runtime: Path) -> None:
     const char *ffp_flag = std::getenv("REFLEX_FFP_QUAD");
     const bool shaderless = pl.vs.empty() && pl.ps.empty();
     const bool fallback = shaderless && ffp_flag && ffp_flag[0] == '1' &&
-        ffp_flag[1] == '\0' &&
+        ffp_flag[1] == '\\0' &&
         reflex_ffp::supported(dev->d9_fvf_current, pl.sampler_tex[0],
                              pl.tss[0][1], pl.tss[0][2], pl.tss[0][3],
                              pl.tss[0][4], pl.tss[0][5], pl.tss[1][1]);
