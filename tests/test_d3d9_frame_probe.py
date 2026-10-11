@@ -29,9 +29,11 @@ int main() {
     pixels[0] = 255;
     assert(reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, &s));
     assert(s.nonblack == 1 && s.hash != old);
-    for n in (1, 2, 4, 8, 16, 32, 64, 128, 256):
+    const uint64_t sampled[] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
+    for (uint64_t n : sampled)
         assert(reflex_d3d9::should_readback(n));
-    for n in (0, 3, 5, 7, 9, 255, 257, 512, 65536):
+    const uint64_t skipped[] = {0, 3, 5, 7, 9, 255, 257, 512, 65536};
+    for (uint64_t n : skipped)
         assert(!reflex_d3d9::should_readback(n));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size()-1, 10, 10, &s));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 0, 10, &s));
