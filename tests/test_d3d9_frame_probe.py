@@ -1,0 +1,83 @@
+"""Bounded GPU readback analysis, strict native RGB sampling and pin tests."""
+import importlib.util
+from pathlib import Path
+import shutil
+import subprocess
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def load(name, file):
+    spec = importlib.util.spec_from_file_location(name, ROOT / file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+patch = load("frame_patch", "tools/patch_reflex_frame_probe.py")
+analysis = load("frame_stats", "tools/summarize_reflex_render.py")
+
+CPP = r"""
+#include "reflex_frame_rgb.h"
+#include <cassert>
+#include <vector>
+int main() {
+    std::vector<uint8_t> pixels(100 * 3);
+    reflex_d3d9::FrameStats s;
+    assert(reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, &s));
+    assert(s.sampled == 2 && s.nonblack == 0);
+    const auto old = s.hash;
+    pixels[0] = 255;
+    assert(reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, &s));
+    assert(s.nonblack == 1 && s.hash != old);
+    assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size()-1, 10, 10, &s));
+    assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 0, 10, &s));
+    assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 8193, 10, &s));
+    assert(!reflex_d3d9::frame_stats(nullptr, pixels.size(), 10, 10, &s));
+    assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, nullptr));
+}
+"""
+
+def test_native_frame_samples(tmp_path):
+    cxx = shutil.which("c++") or shutil.which("clang++") or shutil.which("g++")
+    if cxx is None: pytest.skip("C++ compiler unavailable")
+    source, binary = tmp_path / "frame.cpp", tmp_path / "frame"
+    source.write_text(CPP)
+    subprocess.run([cxx, "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                    "-I", str(ROOT / "runtime"), str(source), "-o", str(binary)],
+                   check=True, capture_output=True, text=True)
+    subprocess.run([str(binary)], check=True, capture_output=True, text=True)
+
+def test_pinned_probe_patch_idempotent_and_safe(tmp_path):
+    original = ROOT / "kit" / "dx" / "d3d9.cpp"
+    if not original.is_file(): pytest.skip("Pinned kit only checked out in CI")
+    kit = tmp_path / "kit"
+    (kit / "dx").mkdir(parents=True)
+    target = kit / "dx" / "d3d9.cpp"
+    shutil.copyfile(original, target)
+    patch.patch_frame_probe(kit, ROOT / "runtime")
+    current = target.read_text()
+    assert current.count(patch.MARKER) == 1
+    assert current.count("[reflex-frame] shaderless-skip") == 1
+    assert current.count("[reflex-frame] present") == 1
+    patch.patch_frame_probe(kit, ROOT / "runtime")
+    assert target.read_text() == current
+    wrong = original.read_text().replace(
+        "        host_d9_present(bb->id, bb->width, bb->height);",
+        "        /* changed */ host_d9_present(bb->id, bb->width, bb->height);", 1)
+    target.write_text(wrong)
+    with pytest.raises(RuntimeError, match="GPU present/readback"):
+        patch.patch_frame_probe(kit, ROOT / "runtime")
+    assert target.read_text() == wrong
+
+def test_metrics_never_invent_frames():
+    assert analysis.measure("no markers")["presents"] is None
+    data = analysis.measure(
+        "d3d9: draw 8: triangle list\n"
+        "[reflex-frame] shaderless-skip n=16 fvf=00000144 decl=22 vs=0 ps=0 prim=4 count=2\n"
+        "[reflex-frame] present n=4 bb=33 size=1280x720 gpu=1\n"
+        "[reflex-frame] rgb n=2 size=1280x720 sampled=9502 lit=6 hash=abc012ef\n")
+    assert data["last_draw"] == 8
+    assert data["shaderless_skips"] == 16
+    assert data["presents"] == 4
+    assert data["last_fvf"] == "00000144"
+    assert data["rgb"]["lit"] == 6
