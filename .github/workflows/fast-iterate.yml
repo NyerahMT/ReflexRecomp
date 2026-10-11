@@ -20,6 +20,8 @@ on:
       - "tools/patch_reflex_d3d9_half.py"
       - "runtime/reflex_d3d9_half.h"
       - "runtime/reflex_frame_rgb.h"
+      - "runtime/reflex_d3d9_ffp_quad.h"
+      - "tools/patch_reflex_d3d9_ffp_quad.py"
       - "tools/patch_reflex_frame_probe.py"
       - "tools/summarize_reflex_render.py"
       - "tools/patch_reflex_sse.py"
@@ -89,6 +91,7 @@ jobs:
           python3 tools/patch_reflex_d3d9_fvf.py
           python3 tools/patch_reflex_d3d9_half.py
           python3 tools/patch_reflex_frame_probe.py
+          python3 tools/patch_reflex_d3d9_ffp_quad.py
           python3 tools/patch_reflex_sse.py
           python3 tools/patch_reflex_interp.py
 
@@ -309,6 +312,7 @@ jobs:
             env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
                 RECOMP_LOG=1 \
                 REFLEX_FRAME_PROBE=1 \
+                REFLEX_FFP_QUAD=1 \
                 RECOMP_WATCH_FRAME=1 \
                 SDL_AUDIODRIVER=dummy \
                 "$app" \
