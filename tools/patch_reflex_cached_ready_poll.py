@@ -8,6 +8,9 @@ Original game:
   0084a81d tests first result; 0084a837 loops on zero after Sleep(1)
   0084a83a is the successful fallthrough
 
+The +0x28 callback is 0084a860 in the original vtable. It calls the +0x20
+lookup, 0084a890. PC 0084a873 tests the returned resource pointer;
+PC 0084a87b returns its status field (+0x94) if the pointer is nonzero.
 Sample actual guest values without fabricating ready states or signals.
 Only generated private translation is changed, never the original game.
 """
@@ -19,7 +22,7 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED = ROOT / "build/recomp/gen"
 MARKER = "reflex-ready-poll-v1"
-SITES = ("0084a81d", "0084a837", "0084a83a")
+SITES = ("0084a81d", "0084a837", "0084a83a", "0084a873", "0084a87b")
 PATTERN = re.compile(
     r"(?m)^([ \t]*)(?=[^\n]*/\* (" +
     "|".join(SITES) +
