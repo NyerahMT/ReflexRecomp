@@ -102,7 +102,10 @@ def test_half_patcher_fails_without_mutating_sources(tmp_path):
     kit = _copy_kit(tmp_path)
     raster_file = kit / "dx" / "d3d9_raster.cpp"
     d3d_file = kit / "dx" / "d3d9.cpp"
-    broken = raster_file.read_text().replace("    case 7:\n", "    case 7: /* changed */\n", 1)
+    # Mutate the exact CPU vertex fetch anchor, not another unrelated case 7.
+    needle = "            v[k] = (int16_t)(c[2 * k] | c[2 * k + 1] << 8);"
+    assert raster_file.read_text().count(needle) == 1
+    broken = raster_file.read_text().replace(needle, "            v[k] = 0;")
     raster_file.write_text(broken)
     original_d3d = d3d_file.read_text()
     with pytest.raises(RuntimeError, match="CPU vertex type switch"):
