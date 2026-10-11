@@ -1,0 +1,137 @@
+name: Reflex Native ARM64 iOS Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/ios-native.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reflex-native-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIT_REV: eb32cc42623e0e9e868b9d27423a57d5a5cba56b
+  GHIDRA_VERSION: "12.1.3"
+  REFLEX_SHA256: 917d14e7ef7ce492b665fea7d0c87c9a39b549e2a43b09883d2a786988e7c02c
+  INPUT_REPO: NyerahMT/ReflexBuildInput
+  INPUT_TAG: game-input-v1
+  TRANSLATE_POLICY_REV: "1"
+
+jobs:
+  compile-original-ios:
+    runs-on: macos-15
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout port
+        uses: actions/checkout@v7.0.1
+      - name: Checkout recomp-kit
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: veritr1x/recomp-kit
+          ref: ${{ env.KIT_REV }}
+          path: kit
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Set up native iOS runtime
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          python3 -m venv .venv
+          .venv/bin/python -m pip install -r kit/requirements-dev.txt
+          python3 tools/patch_reflex_seh.py
+          python3 tools/patch_reflex_runtime.py
+          python3 tools/patch_reflex_d3d9_shaders.py
+          python3 tools/patch_reflex_sse.py
+          python3 tools/patch_reflex_interp.py
+
+      - name: Restore real private game and translated code
+        env:
+          GH_TOKEN: ${{ secrets.REFLEX_INPUT_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" || { echo "::error::REFLEX_INPUT_TOKEN missing"; exit 1; }
+          config_sha="$(cat tools/analyze.py game.toml | shasum -a 256 | awk '{print $1}')"
+          asset="Reflex-Baseline-${REFLEX_SHA256:0:12}-g${GHIDRA_VERSION}-k${KIT_REV:0:12}-c${config_sha:0:12}-p${TRANSLATE_POLICY_REV}.tar.gz"
+          mkdir -p "$RUNNER_TEMP/input" "$RUNNER_TEMP/baseline" "$RUNNER_TEMP/game"
+          gh release download "$INPUT_TAG" --repo "$INPUT_REPO" \
+            --pattern "Game-Core.zip" --dir "$RUNNER_TEMP/input" --clobber
+          unzip -q "$RUNNER_TEMP/input/Game-Core.zip" -d "$RUNNER_TEMP/game"
+          exe="$(find "$RUNNER_TEMP/game" -type f -iname MXReflex.exe -print -quit)"
+          test -n "$exe"
+          echo "$REFLEX_SHA256  $exe" | shasum -a 256 -c -
+          echo "REFLEX_GAME_ROOT=$(dirname "$exe")" >> "$GITHUB_ENV"
+          gh release download "$INPUT_TAG" --repo "$INPUT_REPO" \
+            --pattern "$asset" --dir "$RUNNER_TEMP/baseline" --clobber
+          tar -xzf "$RUNNER_TEMP/baseline/$asset" -C "$GITHUB_WORKSPACE"
+          test -s build/recomp/gen/table.c
+          test -s build/recomp/gen/symbols.json
+          cp build/recomp/gen/symbols.json build/recomp/symbols.json
+
+      - name: Link game input
+        run: .venv/bin/python tools/setup.py --install "$REFLEX_GAME_ROOT" --link-only
+
+      - name: Configure unsigned ARM64 compilation
+        run: |
+          set -euo pipefail
+          # No developer signing identity required for this compile-only gate.
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("kit/tools/build.py")
+          src = path.read_text()
+          changes = {
+              'if args.target == "ios" and not args.stub and not args.team:':
+                  'if args.target == "ios" and not args.stub and not args.team and not args.no_install:',
+              'extra = ["--", "CODE_SIGNING_ALLOWED=NO"] if args.stub else ["--", "-allowProvisioningUpdates"]':
+                  'extra = ["--", "CODE_SIGNING_ALLOWED=NO"] if args.stub or args.no_install else ["--", "-allowProvisioningUpdates"]',
+          }
+          for before, after in changes.items():
+              if src.count(before) != 1:
+                  raise SystemExit(f"Unsupported pinned kit iOS build anchor: {before}")
+              src = src.replace(before, after, 1)
+          path.write_text(src)
+          PY
+
+      - name: Compile real original-game code for iPhone ARM64
+        id: native
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p build/logs
+          .venv/bin/python tools/build.py --target ios --no-install --jobs 6 \
+            2>&1 | tee build/logs/native-arm64-ios.log
+
+      - name: Record ARM64 compile result
+        if: always()
+        run: |
+          mkdir -p build/logs
+          echo "native_ios_compile=${{ steps.native.outcome }}" | tee build/logs/native-arm64-ios-result.txt
+          find build/ios -type d -name ReflexRecomp.app -print \
+            >> build/logs/native-arm64-ios-result.txt 2>/dev/null || true
+
+      - name: Upload diagnostics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reflex-arm64-ios-logs-${{ github.run_number }}
+          path: |
+            build/logs/native-arm64-ios.log
+            build/logs/native-arm64-ios-result.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Fail on native iOS build error
+        if: steps.native.outcome != 'success'
+        run: exit 1
+
+# Do not publish the translated game, original assets, or unsigned .app in
+# this public repository. Device installation requires an authorized signer.
