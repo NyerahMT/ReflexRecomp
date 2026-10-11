@@ -21,7 +21,8 @@ def make_chunk(dir: Path, missing: str | None = None, *, split_body: bool = Fals
     addresses = [x for x in patch.STAGES if x != missing]
     body = (
         "#include <stdint.h>\n"
-        ("static void body_0075ed60(X86 *c, uint32_t entry_) {\n"\n         if split_body else "void fn_0075ed60(X86 *c) {\n")
+        ("static void body_0075ed60(X86 *c, uint32_t entry_) {\n"
+         if split_body else "void fn_0075ed60(X86 *c) {\n")
         + "".join(f"    stub_instruction(); /* {site} CALL */\n" for site in addresses)
         + "}\n"
     )
