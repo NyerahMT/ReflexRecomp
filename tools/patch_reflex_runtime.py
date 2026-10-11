@@ -146,6 +146,48 @@ def main() -> None:
         "[reflex-thread] CreateThread start=",
     )
 
+    # Track whether the loading worker (start=00760400) ever leaves
+    # CREATE_SUSPENDED, and whether it executes/returns. The main thread
+    # currently times out repeatedly on LoadingThreadEvent (000100d0).
+    # Do not fabricate a resume or signal: observe the real guest behavior.
+    replace_once(
+        kernel32,
+        "        int32_t was = t->suspend_count;\n"
+        "        if (t->suspend_count > 0)\n"
+        "            --t->suspend_count;\n"
+        "        o->thread_suspended = t->suspend_count > 0;\n",
+        "        int32_t was = t->suspend_count;\n"
+        "        if (t->suspend_count > 0)\n"
+        "            --t->suspend_count;\n"
+        "        o->thread_suspended = t->suspend_count > 0;\n"
+        "        static uint32_t reflex_resume_samples = 0;\n"
+        "        if (reflex_resume_samples++ < 64 || o->thread_start == 0x00760400u)\n"
+        "            fprintf(stderr, \"[reflex-thread] ResumeThread handle=%08x tid=%u start=%08x previous=%d after=%d\\n\",\n"
+        "                    h, t->id, o->thread_start, was, t->suspend_count);\n",
+        "[reflex-thread] ResumeThread handle=",
+    )
+
+    replace_once(
+        kernel32,
+        "    uint32_t result = 0;\n"
+        "    if (setjmp(t->exit_jmp) == 0)\n"
+        "        result = guest_call(&t->ctx, start, param);\n"
+        "    else\n"
+        "        result = t->exit_code;\n",
+        "    uint32_t result = 0;\n"
+        "    if (start == 0x00760400u)\n"
+        "        fprintf(stderr, \"[reflex-loading-worker] enter tid=%u start=%08x param=%08x suspended=%d\\n\",\n"
+        "                t->id, start, param, t->suspend_count);\n"
+        "    if (setjmp(t->exit_jmp) == 0)\n"
+        "        result = guest_call(&t->ctx, start, param);\n"
+        "    else\n"
+        "        result = t->exit_code;\n"
+        "    if (start == 0x00760400u)\n"
+        "        fprintf(stderr, \"[reflex-loading-worker] exit tid=%u result=%08x\\n\", t->id, result);\n",
+        "[reflex-loading-worker] enter",
+    )
+
+
     replace_once(
         kernel32,
         "void create_event_named(X86 *c, const std::string &name) {\n"
