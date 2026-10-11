@@ -9,17 +9,16 @@ KIT = ROOT / "kit"
 SOURCE = ROOT / "runtime" / "reflex_compat.cpp"
 NUMERIC_HEADER = ROOT / "runtime" / "reflex_crt_numeric.h"
 WIDE_FORMAT_HEADER = ROOT / "runtime" / "reflex_crt_wide_format.h"
-TERMINATION_HEADER = ROOT / "runtime" / "reflex_crt_termination.h"
 
 
 def stage_compat_headers(destination: Path, numeric: Path = NUMERIC_HEADER,
                          wide_format: Path = WIDE_FORMAT_HEADER) -> None:
     # Verify both source headers before changing the staged runtime. The full
     # original-game build includes reflex_compat.cpp, which needs both.
-    for header in (numeric, wide_format, TERMINATION_HEADER):
+    for header in (numeric, wide_format):
         if not header.is_file():
             raise SystemExit(f"missing {header}")
-    for header in (numeric, wide_format, TERMINATION_HEADER):
+    for header in (numeric, wide_format):
         shutil.copyfile(header, destination / header.name)
 
 
@@ -43,7 +42,7 @@ def main() -> None:
     stage_compat_headers(KIT / "runtime")
     # The SIMD decoder is a separately linked guest CPU helper. Both its
     # declaration and implementation must be staged into the pinned kit.
-    for filename in ("reflex_packed_sse.h", "reflex_packed_sse.cpp"):
+    for filename in ("reflex_crt_termination.h", "reflex_packed_sse.h", "reflex_packed_sse.cpp"):
         source = ROOT / "runtime" / filename
         if not source.is_file():
             raise SystemExit(f"missing {source}")
