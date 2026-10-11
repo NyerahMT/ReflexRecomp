@@ -308,6 +308,11 @@ def main():
         print_resource_string_references(args.listing_root)
         # Trace the UI resource lookup that repeatedly requests Intro/Intro.
         print_callers(args.listing_root, "0x0084a890", 60)
+        # This resolved Intro.ENG and returned 1, but the outer caller
+        # invokes the resource consumer repeatedly. Map its call sites.
+        print_callers(args.listing_root, "0x005dbe50", 80)
+        print_callers(args.listing_root, "0x005dbcb0", 40)
+        print_callers(args.listing_root, "0x00543cd0", 32)
         print_metadata_matches(args.listing_root, ["0091600c", "009160f8", "00916014", "language.txt", "00916078"])
         print_callers(args.listing_root, "0x0084a7f0", 60)
         print_callers(args.listing_root, "0x0084c190", 60)

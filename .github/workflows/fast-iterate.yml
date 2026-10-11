@@ -20,6 +20,7 @@ on:
       - "tools/patch_reflex_cached_ui_queue.py"
       - "tools/patch_reflex_cached_ui_lookup.py"
       - "tools/patch_reflex_cached_ui_boolean.py"
+      - "tools/patch_reflex_cached_ui_consumer.py"
       - "tools/audit_translation_traps.py"
       - "tools/check_reflex_boot_progress.py"
       - "tools/patch_reflex_interp.py"
@@ -233,6 +234,7 @@ jobs:
           python3 tools/patch_reflex_cached_ui_queue.py
           python3 tools/patch_reflex_cached_ui_lookup.py
           python3 tools/patch_reflex_cached_ui_boolean.py
+          python3 tools/patch_reflex_cached_ui_consumer.py
 
       # Record *all* still-untranslated opcodes for preventative fixes.
       # This is diagnostic only; an unreachable trap is not a boot failure.
@@ -352,6 +354,8 @@ jobs:
             build/logs/runtime-intro-probe.log \
             > build/logs/runtime-intro-probe-progress.txt 2>&1 || true
           cat build/logs/runtime-intro-probe-progress.txt
+          echo "=== Actual translated resource consumer call sites ==="
+          grep '\[reflex-ui-consumer\]' build/logs/runtime-intro-probe.log | tail -n 20 || true
           grep "\[reflex-ui-result\]" build/logs/runtime-intro-probe.log | tail -n 15 || true
           exit 0
 
