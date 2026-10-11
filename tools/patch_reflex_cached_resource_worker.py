@@ -73,11 +73,11 @@ def patch_worker(generated: Path) -> list[Path]:
 {indent}        const uint32_t write_snapshot = readable ? rd32(manager + 0xf0u) : 0u;
 {indent}        const uint32_t writer = readable ? rd32(manager + 0xf4u) : 0u;
 {indent}        uint32_t kind = 0xffffffffu;
-{indent}        const uint64_t record = uint64_t(manager) + 0x104u +
-{indent}            uint64_t(consumed) * 0x194u;
+{indent}        const uint64_t record = (uint64_t)manager + 0x104u +
+{indent}            (uint64_t)consumed * 0x194u;
 {indent}        if (readable && consumed < 1024u &&
 {indent}            record >= 0x10000u && record + 4u <= GUEST_SIZE)
-{indent}            kind = rd32(uint32_t(record));
+{indent}            kind = rd32((uint32_t)record);
 '''
                 # Keep integer values distinct: 0xffffffff = no valid record.
             else:
