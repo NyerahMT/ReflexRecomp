@@ -2058,33 +2058,41 @@ void crt_rtc_initw(X86 *c) {
     set_eax(c, 0);
 }
 
-// MSVC 2008 x86 basic_string<char>: 16-byte small buffer/pointer union,
-// followed by 32-bit size and capacity. This is the one constructor Reflex
-// reaches during startup.
+// Reflex's VS2008 x86 basic_string<char> has a 4-byte container-base prefix,
+// then the 16-byte small-buffer/pointer union at +4, followed by size at +0x14
+// and capacity at +0x18. The 28-byte layout is visible in original callers
+// such as 00543CD0/00544220; using the common 24-byte layout corrupts lookup
+// keys by shifting the SSO buffer and size/capacity fields four bytes early.
+constexpr uint32_t kMsvcpStringObjectSize = 28u;
+constexpr uint32_t kMsvcpStringBufferOffset = 4u;
+constexpr uint32_t kMsvcpStringSizeOffset = 20u;
+constexpr uint32_t kMsvcpStringCapacityOffset = 24u;
 void msvcp_string_ctor_default(X86 *c) {
     const uint32_t self = c->r[R_ECX];
-    if (!self || !gm_valid(self, 24)) {
+    if (!self || !gm_valid(self, kMsvcpStringObjectSize)) {
         set_eax(c, 0);
         return;
     }
 
-    memset(g_mem + self, 0, 24);
-    wr32(self + 16, 0);   // size
-    wr32(self + 20, 15);  // small-string capacity
+    memset(g_mem + self, 0, kMsvcpStringObjectSize);
+    wr32(self + kMsvcpStringSizeOffset, 0);   // size
+    wr32(self + kMsvcpStringCapacityOffset, 15);  // small-string capacity
     set_eax(c, self);
 }
 
 uint32_t msvcp_string_data(uint32_t object) {
-    if (!object || !gm_valid(object, 24))
+    if (!object || !gm_valid(object, kMsvcpStringObjectSize))
         return 0;
-    return rd32(object + 20) <= 15 ? object : rd32(object);
+    return rd32(object + kMsvcpStringCapacityOffset) <= 15
+        ? object + kMsvcpStringBufferOffset
+        : rd32(object + kMsvcpStringBufferOffset);
 }
 
 bool msvcp_string_copy_into(uint32_t self, uint32_t src) {
-    if (!self || !src || !gm_valid(self, 24) || !gm_valid(src, 24))
+    if (!self || !src || !gm_valid(self, kMsvcpStringObjectSize) || !gm_valid(src, kMsvcpStringObjectSize))
         return false;
 
-    const uint32_t n = rd32(src + 16);
+    const uint32_t n = rd32(src + kMsvcpStringSizeOffset);
     const uint32_t source = msvcp_string_data(src);
     if (n > 0x0fffffffu || !source || (n && !gm_valid(source, n)))
         return false;
@@ -2099,12 +2107,12 @@ bool msvcp_string_copy_into(uint32_t self, uint32_t src) {
         char inline_copy[16] = {};
         if (n)
             memcpy(inline_copy, g_mem + source, n);
-        memset(g_mem + self, 0, 24);
+        memset(g_mem + self, 0, kMsvcpStringObjectSize);
         if (n)
-            memcpy(g_mem + self, inline_copy, n);
-        g_mem[self + n] = 0;
-        wr32(self + 16, n);
-        wr32(self + 20, 15);
+            memcpy(g_mem + self + kMsvcpStringBufferOffset, inline_copy, n);
+        g_mem[self + kMsvcpStringBufferOffset + n] = 0;
+        wr32(self + kMsvcpStringSizeOffset, n);
+        wr32(self + kMsvcpStringCapacityOffset, 15);
         return true;
     }
 
@@ -2113,10 +2121,10 @@ bool msvcp_string_copy_into(uint32_t self, uint32_t src) {
         return false;
     memcpy(g_mem + data, g_mem + source, n);
     g_mem[data + n] = 0;
-    memset(g_mem + self, 0, 24);
-    wr32(self, data);
-    wr32(self + 16, n);
-    wr32(self + 20, n);
+    memset(g_mem + self, 0, kMsvcpStringObjectSize);
+    wr32(self + kMsvcpStringBufferOffset, data);
+    wr32(self + kMsvcpStringSizeOffset, n);
+    wr32(self + kMsvcpStringCapacityOffset, n);
     return true;
 }
 
@@ -2128,7 +2136,7 @@ void msvcp_string_ctor_copy(X86 *c) {
 void msvcp_string_ctor_cstr(X86 *c) {
     const uint32_t self = c->r[R_ECX];
     const std::string value = gm_str(arg(c, 0), 0x100000);
-    if (!self || !gm_valid(self, 24)) {
+    if (!self || !gm_valid(self, kMsvcpStringObjectSize)) {
         set_eax(c, 0);
         return;
     }
@@ -2144,23 +2152,23 @@ void msvcp_string_ctor_cstr(X86 *c) {
         memcpy(g_mem + data, value.data(), n);
         g_mem[data + n] = 0;
     }
-    memset(g_mem + self, 0, 24);
+    memset(g_mem + self, 0, kMsvcpStringObjectSize);
     if (n <= 15) {
         if (n)
-            memcpy(g_mem + self, value.data(), n);
-        g_mem[self + n] = 0;
-        wr32(self + 16, n);
-        wr32(self + 20, 15);
+            memcpy(g_mem + self + kMsvcpStringBufferOffset, value.data(), n);
+        g_mem[self + kMsvcpStringBufferOffset + n] = 0;
+        wr32(self + kMsvcpStringSizeOffset, n);
+        wr32(self + kMsvcpStringCapacityOffset, 15);
     } else {
-        wr32(self, data);
-        wr32(self + 16, n);
-        wr32(self + 20, n);
+        wr32(self + kMsvcpStringBufferOffset, data);
+        wr32(self + kMsvcpStringSizeOffset, n);
+        wr32(self + kMsvcpStringCapacityOffset, n);
     }
     set_eax(c, self);
 }
 
 bool msvcp_string_assign_value(uint32_t self, const std::string &value) {
-    if (!self || !gm_valid(self, 24) || value.size() > 0x0fffffffu)
+    if (!self || !gm_valid(self, kMsvcpStringObjectSize) || value.size() > 0x0fffffffu)
         return false;
 
     const uint32_t n = static_cast<uint32_t>(value.size());
@@ -2174,22 +2182,22 @@ bool msvcp_string_assign_value(uint32_t self, const std::string &value) {
         g_mem[fresh + n] = 0;
     }
 
-    const uint32_t old_capacity = rd32(self + 20);
-    const uint32_t old_data = old_capacity > 15 ? rd32(self) : 0;
+    const uint32_t old_capacity = rd32(self + kMsvcpStringCapacityOffset);
+    const uint32_t old_data = old_capacity > 15 ? rd32(self + kMsvcpStringBufferOffset) : 0;
     if (old_data && heap_owns(old_data))
         heap_free(old_data);
 
-    memset(g_mem + self, 0, 24);
+    memset(g_mem + self, 0, kMsvcpStringObjectSize);
     if (n <= 15) {
         if (n)
-            memcpy(g_mem + self, value.data(), n);
-        g_mem[self + n] = 0;
-        wr32(self + 16, n);
-        wr32(self + 20, 15);
+            memcpy(g_mem + self + kMsvcpStringBufferOffset, value.data(), n);
+        g_mem[self + kMsvcpStringBufferOffset + n] = 0;
+        wr32(self + kMsvcpStringSizeOffset, n);
+        wr32(self + kMsvcpStringCapacityOffset, 15);
     } else {
-        wr32(self, fresh);
-        wr32(self + 16, n);
-        wr32(self + 20, n);
+        wr32(self + kMsvcpStringBufferOffset, fresh);
+        wr32(self + kMsvcpStringSizeOffset, n);
+        wr32(self + kMsvcpStringCapacityOffset, n);
     }
     return true;
 }
@@ -2198,12 +2206,12 @@ bool msvcp_string_assign_value(uint32_t self, const std::string &value) {
 // one callee-cleaned const basic_string& stack argument).
 // Snapshot first: the destination's old heap allocation may be released.
 bool msvcp_string_assign_from(uint32_t self, uint32_t src) {
-    if (!self || !src || !gm_valid(self, 24) || !gm_valid(src, 24))
+    if (!self || !src || !gm_valid(self, kMsvcpStringObjectSize) || !gm_valid(src, kMsvcpStringObjectSize))
         return false;
     if (self == src)
         return true;
-    const uint32_t n = rd32(src + 16);
-    const uint32_t capacity = rd32(src + 20);
+    const uint32_t n = rd32(src + kMsvcpStringSizeOffset);
+    const uint32_t capacity = rd32(src + kMsvcpStringCapacityOffset);
     const uint32_t data = msvcp_string_data(src);
     if (n > 0x0fffffffu || n > capacity ||
         !data || !gm_valid(data, n + 1u))
@@ -2226,12 +2234,12 @@ void msvcp_string_assign_cstr(X86 *c) {
 void msvcp_string_resize(X86 *c) {
     const uint32_t self = c->r[R_ECX];
     const uint32_t requested = arg(c, 0);
-    if (!self || !gm_valid(self, 24) || requested > 0x01000000u) {
+    if (!self || !gm_valid(self, kMsvcpStringObjectSize) || requested > 0x01000000u) {
         set_eax(c, 0);
         return;
     }
 
-    const uint32_t old_size = rd32(self + 16);
+    const uint32_t old_size = rd32(self + kMsvcpStringSizeOffset);
     const uint32_t old_data = msvcp_string_data(self);
     if (old_size > 0x01000000u ||
         (old_size && (!old_data || !gm_valid(old_data, old_size)))) {
@@ -2265,11 +2273,11 @@ void msvcp_char_traits_copy_s(X86 *c) {
 }
 
 int msvcp_string_compare(uint32_t left, uint32_t right) {
-    if (!left || !right || !gm_valid(left, 24) || !gm_valid(right, 24))
+    if (!left || !right || !gm_valid(left, kMsvcpStringObjectSize) || !gm_valid(right, kMsvcpStringObjectSize))
         return 0;
 
-    const uint32_t left_size = rd32(left + 16);
-    const uint32_t right_size = rd32(right + 16);
+    const uint32_t left_size = rd32(left + kMsvcpStringSizeOffset);
+    const uint32_t right_size = rd32(right + kMsvcpStringSizeOffset);
     const uint32_t left_data = msvcp_string_data(left);
     const uint32_t right_data = msvcp_string_data(right);
     if ((left_size && (!left_data || !gm_valid(left_data, left_size))) ||
@@ -2293,38 +2301,38 @@ void msvcp_string_less(X86 *c) {
 
 // MSVC 2008 x86 basic_string<char>::swap(basic_string&) is a thiscall:
 // ECX is 'this', and the other string is the one callee-cleaned stack
-// argument. The 24-byte representation consists of a 16-byte SSO or heap
-// pointer union and 32-bit size and capacity fields. Swapping complete
+// argument. The 28-byte representation includes the 4-byte container base,
+// 16-byte SSO or heap-pointer union, and 32-bit size/capacity fields. Swapping complete
 // representations transfers any owned heap allocation without copying it,
 // and also handles the inline/heap combination correctly.
 void msvcp_string_swap(X86 *c) {
     const uint32_t self = c->r[R_ECX];
     const uint32_t other = arg(c, 0);
-    if (!self || !other || !gm_valid(self, 24) || !gm_valid(other, 24)) {
+    if (!self || !other || !gm_valid(self, kMsvcpStringObjectSize) || !gm_valid(other, kMsvcpStringObjectSize)) {
         fprintf(stderr, "[reflex-msvcp] basic_string::swap invalid operands this=%08x other=%08x\n",
                 self, other);
         set_eax(c, 0);
         return;
     }
     if (self != other) {
-        uint8_t temporary[24];
-        memcpy(temporary, g_mem + self, 24);
-        memcpy(g_mem + self, g_mem + other, 24);
-        memcpy(g_mem + other, temporary, 24);
+        uint8_t temporary[kMsvcpStringObjectSize];
+        memcpy(temporary, g_mem + self, kMsvcpStringObjectSize);
+        memcpy(g_mem + self, g_mem + other, kMsvcpStringObjectSize);
+        memcpy(g_mem + other, temporary, kMsvcpStringObjectSize);
     }
     set_eax(c, 0);
 }
 
 void msvcp_string_dtor(X86 *c) {
     const uint32_t self = c->r[R_ECX];
-    if (self && gm_valid(self, 24)) {
-        const uint32_t capacity = rd32(self + 20);
+    if (self && gm_valid(self, kMsvcpStringObjectSize)) {
+        const uint32_t capacity = rd32(self + kMsvcpStringCapacityOffset);
         if (capacity > 15) {
-            const uint32_t data = rd32(self);
+            const uint32_t data = rd32(self + kMsvcpStringBufferOffset);
             if (data && heap_owns(data))
                 heap_free(data);
         }
-        memset(g_mem + self, 0, 24);
+        memset(g_mem + self, 0, kMsvcpStringObjectSize);
     }
     set_eax(c, self);
 }
