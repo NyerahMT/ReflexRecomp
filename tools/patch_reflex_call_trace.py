@@ -23,6 +23,31 @@ def main():
     trace = ANCHOR + """    const uint32_t trace_esp = c->r[R_ESP];
     const uint32_t trace_ret = rd32(trace_esp);
 
+    // reflex-finalizer-vcall-v1: distinguish the two indirect resource
+    // finalizer lookups from the early exits in original 00543cd0.
+    // 00543d68: resource availability query; 00543d86: resource-load call.
+    // These addresses are guest return sites, not host function pointers.
+    if (trace_ret == 0x00543d68u || trace_ret == 0x00543d86u) {
+        static uint64_t query_calls = 0u;
+        static uint64_t load_calls = 0u;
+        const bool is_load = trace_ret == 0x00543d86u;
+        uint64_t n = is_load
+            ? __atomic_add_fetch(&load_calls, 1u, __ATOMIC_RELAXED)
+            : __atomic_add_fetch(&query_calls, 1u, __ATOMIC_RELAXED);
+        if (n <= 16u || (n & (n - 1u)) == 0u) {
+            const bool valid_stack = trace_esp >= 0x10000u
+                && (uint64_t)trace_esp + 12u <= GUEST_SIZE;
+            fprintf(stderr,
+                    "[reflex-finalizer-call] phase=%s n=%llu site=%08x "
+                    "target=%08x this=%08x arg0=%08x arg1=%08x\n",
+                    is_load ? "load" : "query",
+                    (unsigned long long)n, trace_ret, target,
+                    c->r[R_ECX],
+                    valid_stack ? rd32(trace_esp + 4u) : 0u,
+                    valid_stack ? rd32(trace_esp + 8u) : 0u);
+        }
+    }
+
     if (trace_ret == 0x007add47u) {
         fprintf(stderr,
                 "[recomp] reflex producer trace 007add45: target=%08x esp=%08x ecx=%08x "

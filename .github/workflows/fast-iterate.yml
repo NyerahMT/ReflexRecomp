@@ -356,6 +356,8 @@ jobs:
             build/logs/runtime-intro-probe.log \
             > build/logs/runtime-intro-probe-progress.txt 2>&1 || true
           cat build/logs/runtime-intro-probe-progress.txt
+          echo "=== Resource finalizer virtual-call stages ==="
+          grep '\[reflex-finalizer-call\]' build/logs/runtime-intro-probe.log | tail -n 24 || true
           echo "=== Post-Intro resource finalization results ==="
           grep '\[reflex-resource-final\]' build/logs/runtime-intro-probe.log | tail -n 15 || true
           echo "=== Actual translated resource consumer call sites ==="
