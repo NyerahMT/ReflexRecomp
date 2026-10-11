@@ -51,6 +51,7 @@ jobs:
           python3 tools/patch_reflex_seh.py
           python3 tools/patch_reflex_runtime.py
           python3 tools/patch_reflex_d3d9_shaders.py
+          python3 tools/patch_reflex_d3d9_half.py
           python3 tools/patch_reflex_sse.py
           python3 tools/patch_reflex_interp.py
 
