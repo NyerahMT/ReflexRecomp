@@ -13,6 +13,7 @@ on:
     paths:
       - "runtime/**"
       - "tools/patch_reflex_runtime.py"
+      - "tools/analyze_reflex_loading_worker.py"
       - "tools/patch_reflex_d3d9_shaders.py"
       - "tools/patch_reflex_d3d9_swapchain.py"
       - "tools/patch_reflex_d3d9_fvf.py"
@@ -338,6 +339,7 @@ jobs:
             # previously measured Intro/Intro. resource lookup spin.
             # Preserve the classification in the log artifact for review.
             python3 tools/summarize_reflex_render.py build/logs/runtime.log | tee build/logs/render-frontier.txt
+            python3 tools/analyze_reflex_loading_worker.py build/logs/runtime.log | tee build/logs/loading-worker-progress.txt
           grep "\[reflex-frame\]" build/logs/runtime.log | tail -n 40 || true
           python3 tools/check_reflex_boot_progress.py build/logs/runtime.log \
               | tee build/logs/runtime-progress.txt
