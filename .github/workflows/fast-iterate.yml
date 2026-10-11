@@ -19,6 +19,9 @@ on:
       - "runtime/reflex_d3d9_fvf.h"
       - "tools/patch_reflex_d3d9_half.py"
       - "runtime/reflex_d3d9_half.h"
+      - "runtime/reflex_frame_rgb.h"
+      - "tools/patch_reflex_frame_probe.py"
+      - "tools/summarize_reflex_render.py"
       - "tools/patch_reflex_sse.py"
       - "tools/patch_reflex_cached_sse.py"
       - "tools/patch_reflex_cached_simd.py"
@@ -85,6 +88,7 @@ jobs:
           python3 tools/patch_reflex_d3d9_swapchain.py
           python3 tools/patch_reflex_d3d9_fvf.py
           python3 tools/patch_reflex_d3d9_half.py
+          python3 tools/patch_reflex_frame_probe.py
           python3 tools/patch_reflex_sse.py
           python3 tools/patch_reflex_interp.py
 
@@ -304,6 +308,7 @@ jobs:
             timeout --signal=TERM --kill-after=5s 15s \
             env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
                 RECOMP_LOG=1 \
+                REFLEX_FRAME_PROBE=1 \
                 RECOMP_WATCH_FRAME=1 \
                 SDL_AUDIODRIVER=dummy \
                 "$app" \
@@ -328,7 +333,9 @@ jobs:
             # Survival is not equivalent to startup progress: detect the
             # previously measured Intro/Intro. resource lookup spin.
             # Preserve the classification in the log artifact for review.
-            python3 tools/check_reflex_boot_progress.py build/logs/runtime.log \
+            python3 tools/summarize_reflex_render.py build/logs/runtime.log | tee build/logs/render-frontier.txt
+          grep "\[reflex-frame\]" build/logs/runtime.log | tail -n 40 || true
+          python3 tools/check_reflex_boot_progress.py build/logs/runtime.log \
               | tee build/logs/runtime-progress.txt
             echo "PASS: Reflex stayed alive for the full 30-second runtime gate without unresolved ABI/control-flow faults."
             exit 0
