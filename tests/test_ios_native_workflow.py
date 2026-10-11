@@ -20,3 +20,14 @@ def test_do_not_publish_proprietary_iOS_game():
     assert 'build/recomp/gen' not in artifacts
     assert 'build/ios' not in artifacts
     assert 'Game-Core.zip' not in artifacts
+
+
+def test_ios_build_stages_matching_private_database_payloads():
+    assert '--pattern "Archive.4.zip"' in WORKFLOW
+    assert '--pattern "Archive.3.zip"' in WORKFLOW
+    assert 'unzip -p "$RUNNER_TEMP/input/Archive.3.zip" ' in WORKFLOW
+    assert '"$game_root/Database/MXUI.dx9.package"' in WORKFLOW
+    assert 'python3 tools/verify_ios_reflex_assets.py' in WORKFLOW
+    assert '--app "$app"' in WORKFLOW
+    assert "required_assets_staged=" in WORKFLOW
+    assert "Fail if iOS bundle lacks original startup assets" in WORKFLOW

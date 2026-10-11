@@ -69,7 +69,34 @@ jobs:
           exe="$(find "$RUNNER_TEMP/game" -type f -iname MXReflex.exe -print -quit)"
           test -n "$exe"
           echo "$REFLEX_SHA256  $exe" | shasum -a 256 -c -
-          echo "REFLEX_GAME_ROOT=$(dirname "$exe")" >> "$GITHUB_ENV"
+          game_root="$(dirname "$exe")"
+          echo "REFLEX_GAME_ROOT=$game_root" >> "$GITHUB_ENV"
+
+          # Match the original database assets used by the Linux headless
+          # runtime. Game-Core.zip does NOT provide the complete startup
+          # database payload. Leaving these out produces a successful .app
+          # that cannot initialize the original Reflex menus.
+          mkdir -p "$game_root/Database"
+          gh release download "$INPUT_TAG" --repo "$INPUT_REPO" \
+            --pattern "Archive.4.zip" --dir "$RUNNER_TEMP/input" --clobber
+          test -s "$RUNNER_TEMP/input/Archive.4.zip"
+          unzip -q "$RUNNER_TEMP/input/Archive.4.zip" -x '__MACOSX/*' \
+            -d "$game_root/Database"
+          rm -f "$RUNNER_TEMP/input/Archive.4.zip"
+
+          # Archive.3 is private; extract only the exact matching MXUI
+          # package, which Archive.4 lacks, without storing the full
+          # archive in the iPhone app bundle.
+          gh release download "$INPUT_TAG" --repo "$INPUT_REPO" \
+            --pattern "Archive.3.zip" --dir "$RUNNER_TEMP/input" --clobber
+          test -s "$RUNNER_TEMP/input/Archive.3.zip"
+          unzip -p "$RUNNER_TEMP/input/Archive.3.zip" 'MXUI.dx9.package' \
+            > "$game_root/Database/MXUI.dx9.package"
+          rm -f "$RUNNER_TEMP/input/Archive.3.zip"
+
+          python3 tools/verify_ios_reflex_assets.py \
+            --game-root "$game_root"
+
           gh release download "$INPUT_TAG" --repo "$INPUT_REPO" \
             --pattern "$asset" --dir "$RUNNER_TEMP/baseline" --clobber
           tar -xzf "$RUNNER_TEMP/baseline/$asset" -C "$GITHUB_WORKSPACE"
@@ -112,11 +139,23 @@ jobs:
           .venv/bin/python tools/build.py --target ios --no-install --team 0000000000 --jobs 6 \
             2>&1 | tee build/logs/native-arm64-ios.log
 
+      - name: Verify original Reflex startup assets in compiled iOS app
+        if: steps.native.outcome == 'success'
+        id: game_assets
+        run: |
+          set -euo pipefail
+          app="$GITHUB_WORKSPACE/build/ios/Release/ReflexRecomp.app"
+          python3 tools/verify_ios_reflex_assets.py \
+            --game-root "$REFLEX_GAME_ROOT" \
+            --app "$app" \
+            | tee build/logs/ios-game-asset-audit.txt
+
       - name: Record ARM64 compile result
         if: always()
         run: |
           mkdir -p build/logs
           echo "native_ios_compile=${{ steps.native.outcome }}" | tee build/logs/native-arm64-ios-result.txt
+          echo "required_assets_staged=${{ steps.game_assets.outcome }}" | tee -a build/logs/native-arm64-ios-result.txt
           find build/ios -type d -name ReflexRecomp.app -print \
             >> build/logs/native-arm64-ios-result.txt 2>/dev/null || true
 
@@ -128,12 +167,19 @@ jobs:
           path: |
             build/logs/native-arm64-ios.log
             build/logs/native-arm64-ios-result.txt
+            build/logs/ios-game-asset-audit.txt
           if-no-files-found: warn
           retention-days: 14
 
       - name: Fail on native iOS build error
         if: steps.native.outcome != 'success'
         run: exit 1
+
+      - name: Fail if iOS bundle lacks original startup assets
+        if: steps.native.outcome == 'success' && steps.game_assets.outcome != 'success'
+        run: |
+          echo "::error::Native code compiled, but original Reflex startup databases were not bundled."
+          exit 1
 
 # Do not publish the translated game, original assets, or unsigned .app in
 # this public repository. Device installation requires an authorized signer.
