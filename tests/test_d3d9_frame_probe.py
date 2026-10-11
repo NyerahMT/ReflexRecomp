@@ -29,6 +29,10 @@ int main() {
     pixels[0] = 255;
     assert(reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, &s));
     assert(s.nonblack == 1 && s.hash != old);
+    for n in (1, 2, 4, 8, 16, 32, 64, 128, 256):
+        assert(reflex_d3d9::should_readback(n));
+    for n in (0, 3, 5, 7, 9, 255, 257, 512, 65536):
+        assert(!reflex_d3d9::should_readback(n));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size()-1, 10, 10, &s));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 0, 10, &s));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 8193, 10, &s));
@@ -81,3 +85,18 @@ def test_metrics_never_invent_frames():
     assert data["presents"] == 4
     assert data["last_fvf"] == "00000144"
     assert data["rgb"]["lit"] == 6
+
+
+def test_first_nonblack_sample_is_not_lost():
+    data = analysis.measure(
+        "[reflex-frame] rgb n=1 size=1280x720 sampled=9502 lit=0 hash=aa11\n"
+        "[reflex-frame] rgb n=2 size=1280x720 sampled=9502 lit=0 hash=aa11\n"
+        "[reflex-frame] rgb n=8 size=1280x720 sampled=9502 lit=77 hash=cd12\n"
+        "[reflex-frame] rgb n=16 size=1280x720 sampled=9502 lit=0 hash=aa11\n")
+    assert data["readbacks"] == 4
+    assert data["first_nonblack"]["present"] == 8
+    assert data["first_nonblack"]["lit"] == 77
+    assert data["rgb"]["present"] == 16
+    empty = analysis.measure("[reflex-frame] present n=64 bb=4 size=1280x720 gpu=1")
+    assert empty["first_nonblack"] is None
+    assert empty["readbacks"] == 0

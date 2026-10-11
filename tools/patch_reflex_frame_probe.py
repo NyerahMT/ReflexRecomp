@@ -65,9 +65,10 @@ def patch_frame_probe(kit: Path, runtime: Path) -> None:
                 '''        host_d9_present(bb->id, bb->width, bb->height);
         ddraw_external_present_end();''',
                 '''        host_d9_present(bb->id, bb->width, bb->height);
-        // Only the first two opt-in GPU frames are read back to limit stalls.
+        // Sample first 2 and powers of two up to 256: 9 bounded readbacks.
         const char *probe = std::getenv("REFLEX_FRAME_PROBE");
-        if (probe && probe[0] == '1' && n <= 2 && bb->width && bb->height &&
+        if (probe && probe[0] == '1' && reflex_d3d9::should_readback(n) &&
+            bb->width && bb->height &&
             uint64_t(bb->width) * bb->height * 3u <= 12u * 1024u * 1024u) {
             std::vector<uint8_t> rgb(size_t(bb->width) * bb->height * 3u);
             uint32_t w = 0, h = 0;
