@@ -17,7 +17,11 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED = ROOT / "build/recomp/gen"
-FUNCTIONS = (\n    "void fn_0075ed60(X86 *c) {\\n",\n    "static void body_0075ed60(X86 *c, uint32_t entry_) {\\n",\n)
+FUNCTIONS = (
+    "void fn_0075ed60(X86 *c) {\n",
+    "static void body_0075ed60(X86 *c, uint32_t entry_) {\n",
+)
+
 MARKER = "reflex-loading-stage-v1"
 
 # These addresses are taken from the original executable's disassembly.
