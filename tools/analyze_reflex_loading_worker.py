@@ -13,7 +13,7 @@ RESUME = re.compile(r"\[reflex-thread\] ResumeThread handle=([0-9a-fA-F]+) tid=(
 ENTER = re.compile(r"\[reflex-loading-worker\] enter tid=(\d+) start=([0-9a-fA-F]+)")
 EXIT = re.compile(r"\[reflex-loading-worker\] exit tid=(\d+) result=([0-9a-fA-F]+)")
 EVENT = re.compile(r"\[reflex-sync\] CreateEventA name=LoadingThreadEvent handle=([0-9a-fA-F]+)")
-WAIT = re.compile(r"\[reflex-sync\] WaitForSingleObject (?:enter|exit) tid=(\d+) handle=([0-9a-fA-F]+)")
+WAIT = re.compile(r"\[reflex-sync\] WaitForSingleObject enter tid=(\d+) handle=([0-9a-fA-F]+)")
 SIGNAL = re.compile(r"\[reflex-sync\] SetEvent handle=([0-9a-fA-F]+)")
 START = 0x00760400
 
