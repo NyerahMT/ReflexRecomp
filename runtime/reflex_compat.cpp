@@ -2052,6 +2052,110 @@ void crt_mbstowcs_s(X86 *c) {
     set_eax(c, rc);
 }
 
+void crt_wcsncpy(X86 *c) {
+    const uint32_t dst = arg(c, 0);
+    const uint32_t src = arg(c, 1);
+    const uint32_t count = arg(c, 2);
+    if (!count) {
+        set_eax(c, dst);
+        return;
+    }
+    if (!dst || !src || count > UINT32_MAX / 2u ||
+        !gm_valid(dst, count * 2u)) {
+        set_eax(c, dst);
+        return;
+    }
+
+    bool nul_seen = false;
+    for (uint32_t i = 0; i < count; ++i) {
+        uint16_t ch = 0;
+        if (!nul_seen) {
+            const uint64_t src_addr64 = uint64_t(src) + uint64_t(i) * 2u;
+            if (src_addr64 > UINT32_MAX ||
+                !gm_valid(static_cast<uint32_t>(src_addr64), 2)) {
+                set_eax(c, dst);
+                return;
+            }
+            ch = rd16(static_cast<uint32_t>(src_addr64));
+            if (!ch)
+                nul_seen = true;
+        }
+        wr16(dst + i * 2u, ch);
+    }
+    set_eax(c, dst);
+}
+
+void crt_wcsrchr(X86 *c) {
+    const uint32_t src = arg(c, 0);
+    const uint16_t needle = static_cast<uint16_t>(arg(c, 1));
+    if (!src) {
+        set_eax(c, 0);
+        return;
+    }
+
+    uint32_t last = 0;
+    for (uint32_t i = 0; i < 0x800000u; ++i) {
+        const uint64_t addr64 = uint64_t(src) + uint64_t(i) * 2u;
+        if (addr64 > UINT32_MAX ||
+            !gm_valid(static_cast<uint32_t>(addr64), 2)) {
+            set_eax(c, 0);
+            return;
+        }
+        const uint32_t addr = static_cast<uint32_t>(addr64);
+        const uint16_t ch = rd16(addr);
+        if (ch == needle)
+            last = addr;
+        if (!ch) {
+            set_eax(c, last);
+            return;
+        }
+    }
+    set_eax(c, 0);
+}
+
+void crt_wcspbrk(X86 *c) {
+    const uint32_t src = arg(c, 0);
+    const uint32_t accept = arg(c, 1);
+    if (!src || !accept) {
+        set_eax(c, 0);
+        return;
+    }
+
+    for (uint32_t i = 0; i < 0x800000u; ++i) {
+        const uint64_t src_addr64 = uint64_t(src) + uint64_t(i) * 2u;
+        if (src_addr64 > UINT32_MAX ||
+            !gm_valid(static_cast<uint32_t>(src_addr64), 2)) {
+            set_eax(c, 0);
+            return;
+        }
+        const uint32_t src_addr = static_cast<uint32_t>(src_addr64);
+        const uint16_t ch = rd16(src_addr);
+        if (!ch) {
+            set_eax(c, 0);
+            return;
+        }
+
+        for (uint32_t j = 0; j < 0x800000u; ++j) {
+            const uint64_t accept_addr64 =
+                uint64_t(accept) + uint64_t(j) * 2u;
+            if (accept_addr64 > UINT32_MAX ||
+                !gm_valid(static_cast<uint32_t>(accept_addr64), 2)) {
+                set_eax(c, 0);
+                return;
+            }
+            const uint16_t candidate =
+                rd16(static_cast<uint32_t>(accept_addr64));
+            if (!candidate)
+                break;
+            if (candidate == ch) {
+                set_eax(c, src_addr);
+                return;
+            }
+        }
+    }
+    set_eax(c, 0);
+}
+
 void crt_rtc_initw(X86 *c) {
     // MSVCR90's _CRT_RTC_INITW is cdecl with five arguments. The retail CRT
     // can return no user RTC callback; Wine models that valid case as NULL.
@@ -2456,6 +2560,9 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "sprintf", ARGC_CDECL, crt_sprintf},
     {"MSVCR90.dll", "memmove_s", ARGC_CDECL, crt_memmove_s},
     {"MSVCR90.dll", "mbstowcs_s", ARGC_CDECL, crt_mbstowcs_s},
+    {"MSVCR90.dll", "wcsncpy", ARGC_CDECL, crt_wcsncpy},
+    {"MSVCR90.dll", "wcsrchr", ARGC_CDECL, crt_wcsrchr},
+    {"MSVCR90.dll", "wcspbrk", ARGC_CDECL, crt_wcspbrk},
     {"MSVCR90.dll", "_CRT_RTC_INITW", ARGC_CDECL, crt_rtc_initw},
     {"MSVCR90.dll", "malloc", ARGC_CDECL, crt_malloc},
     {"MSVCR90.dll", "calloc", ARGC_CDECL, crt_calloc},
