@@ -1,6 +1,8 @@
 """Reflex resource worker queue instrumentation regression tests."""
 from pathlib import Path
 import importlib.util
+import shutil
+import subprocess
 
 import pytest
 
@@ -35,7 +37,7 @@ def test_worker_checkpoint_probe_is_read_only_and_idempotent(tmp_path):
     assert probe.patch_worker(gen) == results
     assert "rd32(manager + 0xecu)" in results[0].read_text()
     assert "rd32(manager + 0xf0u)" in results[0].read_text()
-    assert "rd32(uint32_t(record))" in results[0].read_text()
+    assert "rd32((uint32_t)record)" in results[0].read_text()
 
 
 def test_missing_required_worker_site_fails_closed(tmp_path):
@@ -73,3 +75,27 @@ def test_worker_opcode_stage_names():
     assert "0084c823" in probe.WORKER
     assert "0084ca40" in probe.WORKER
     assert "0084bfb8" in probe.WRITERS
+
+
+def test_generated_instrumentation_compiles_as_c11(tmp_path):
+    compiler = shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")
+    if compiler is None:
+        pytest.skip("C compiler not installed")
+    gen = tmp_path / "gen"
+    make_chunks(gen)
+    probe.patch_worker(gen)
+    header = """#include <stdint.h>
+#define GUEST_SIZE (0x10000000u)
+typedef struct X86 { uint32_t r[8]; } X86;
+static uint32_t rd32(uint32_t offset) { return offset; }
+static void synthetic_instruction(void) {}
+"""
+    for i, chunk_path in enumerate(sorted(gen.glob("chunk_*.c"))):
+        source = tmp_path / f"compile_worker_{i}.c"
+        source.write_text(header + chunk_path.read_text())
+        result = subprocess.run(
+            [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+             "-fsyntax-only", str(source)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
