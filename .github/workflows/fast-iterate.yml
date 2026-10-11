@@ -14,6 +14,7 @@ on:
       - "runtime/**"
       - "tools/patch_reflex_runtime.py"
       - "tools/patch_reflex_d3d9_shaders.py"
+      - "tools/patch_reflex_d3d9_swapchain.py"
       - "tools/patch_reflex_sse.py"
       - "tools/patch_reflex_cached_sse.py"
       - "tools/patch_reflex_cached_simd.py"
@@ -77,6 +78,7 @@ jobs:
           python3 tools/patch_reflex_seh.py
           python3 tools/patch_reflex_runtime.py
           python3 tools/patch_reflex_d3d9_shaders.py
+          python3 tools/patch_reflex_d3d9_swapchain.py
           python3 tools/patch_reflex_sse.py
           python3 tools/patch_reflex_interp.py
 
