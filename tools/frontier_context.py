@@ -317,7 +317,7 @@ def main():
         print_callers(args.listing_root, "0x00543cd0", 32)
         print_callers(args.listing_root, "0x00544220", 48)
         print_callers(args.listing_root, "0x00544a50", 48)
-        print_metadata_matches(args.listing_root, ["0091600c", "009160f8", "00916014", "language.txt", "00916078"])
+        print_metadata_matches(args.listing_root, ["0091600c", "009160f8", "00916014", "00916078", "009162bc", "language.txt"])
         print_callers(args.listing_root, "0x0084a7f0", 60)
         print_callers(args.listing_root, "0x0084c190", 60)
         # Pair the queue submitter with its free-slot allocator and discover
