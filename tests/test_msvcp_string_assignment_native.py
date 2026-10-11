@@ -126,13 +126,17 @@ def test_guest_string_copy_assignment(tmp_path):
     if not compiler:
         pytest.skip("no native compiler installed")
     source = COMPAT.read_text()
-    copy = source[source.index("constexpr uint32_t kMsvcpStringObjectSize = 28u;"):
+    constants = source[
+        source.index("constexpr uint32_t kMsvcpStringObjectSize = 28u;"):
+        source.index("void msvcp_string_ctor_default(X86 *c) {")
+    ]
+    copy = source[source.index("uint32_t msvcp_string_data(uint32_t object) {"):
                   source.index("void msvcp_string_ctor_copy(X86 *c) {")]
     assign = source[source.index("bool msvcp_string_assign_value(uint32_t self, const std::string &value) {"):
                     source.index("void msvcp_string_assign_copy(X86 *c) {")]
     cpp = tmp_path / "assignment.cpp"
     exe = tmp_path / "assignment"
-    cpp.write_text(PREFIX + "\n" + copy + "\n" + assign + "\n" + SUFFIX)
+    cpp.write_text(PREFIX + "\n" + constants + "\n" + copy + "\n" + assign + "\n" + SUFFIX)
     subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror",
                     str(cpp), "-o", str(exe)],
                    check=True, text=True, capture_output=True)
