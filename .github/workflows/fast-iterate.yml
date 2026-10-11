@@ -22,6 +22,7 @@ on:
       - "tools/patch_reflex_cached_ui_boolean.py"
       - "tools/patch_reflex_cached_ui_consumer.py"
       - "tools/patch_reflex_cached_resource_finalize.py"
+      - "tools/patch_reflex_cached_resource_gates.py"
       - "tools/audit_translation_traps.py"
       - "tools/check_reflex_boot_progress.py"
       - "tools/patch_reflex_interp.py"
@@ -237,6 +238,7 @@ jobs:
           python3 tools/patch_reflex_cached_ui_boolean.py
           python3 tools/patch_reflex_cached_ui_consumer.py
           python3 tools/patch_reflex_cached_resource_finalize.py
+          python3 tools/patch_reflex_cached_resource_gates.py
 
       # Record *all* still-untranslated opcodes for preventative fixes.
       # This is diagnostic only; an unreachable trap is not a boot failure.
@@ -356,6 +358,8 @@ jobs:
             build/logs/runtime-intro-probe.log \
             > build/logs/runtime-intro-probe-progress.txt 2>&1 || true
           cat build/logs/runtime-intro-probe-progress.txt
+          echo "=== Early finalizer branch decisions ==="
+          grep '\[reflex-resource-gate\]' build/logs/runtime-intro-probe.log | tail -n 20 || true
           echo "=== Resource finalizer virtual-call stages ==="
           grep '\[reflex-finalizer-call\]' build/logs/runtime-intro-probe.log | tail -n 24 || true
           echo "=== Post-Intro resource finalization results ==="
