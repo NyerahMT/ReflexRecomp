@@ -2,7 +2,7 @@ name: Checks
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
   pull_request:
   workflow_dispatch:
 
@@ -34,6 +34,8 @@ jobs:
     steps:
       - name: Checkout ReflexRecomp
         uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Checkout pinned recomp-kit
         uses: actions/checkout@v7.0.1
@@ -46,6 +48,16 @@ jobs:
         uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
+
+      - name: Classify native build requirement
+        id: native
+        run: |
+          git fetch --quiet --no-tags origin main:refs/remotes/origin/main
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            python3 tools/classify_checks.py --main >> "$GITHUB_OUTPUT"
+          else
+            python3 tools/classify_checks.py --base origin/main >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install contributor tools
         run: |
@@ -70,8 +82,9 @@ jobs:
           ${{ matrix.python }} -m pytest -q tests
 
       - name: Stub native configure/build
+        if: steps.native.outputs.native_required == 'true'
         run: ${{ matrix.python }} tools/build.py --stub
 
       - name: Unsigned iOS stub compile
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.native.outputs.native_required == 'true'
         run: ${{ matrix.python }} tools/build.py --stub --target ios
