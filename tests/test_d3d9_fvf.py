@@ -27,7 +27,7 @@ static void elem(const std::vector<uint8_t> &v, size_t n,
     assert(v[i+4] == type && v[i+5] == 0);
     assert(v[i+6] == usage && v[i+7] == index);
 }
-static void end(const std::vector<uint8_t> &v) {
+static void check_end(const std::vector<uint8_t> &v) {
     assert(v.size() >= 8u);
     assert(v[v.size()-8] == 0xff && v[v.size()-4] == 17);
 }
@@ -39,7 +39,7 @@ int main() {
     elem(v, 0, 0, 3, 9, 0);
     elem(v, 1, 16, 4, 10, 0);
     elem(v, 2, 20, 1, 5, 0);
-    end(v);
+    check_end(v);
 
     // XYZ + normals + diffuse + one 3D texture coordinate.
     assert(reflex_d3d9::fvf_declaration(
@@ -49,7 +49,7 @@ int main() {
     elem(v, 1, 12, 2, 3, 0);
     elem(v, 2, 24, 4, 10, 0);
     elem(v, 3, 28, 2, 5, 0);
-    end(v);
+    check_end(v);
 
     // XYZB2 plus final blend index, a normal and a 2D texcoord.
     assert(reflex_d3d9::fvf_declaration(
@@ -60,12 +60,12 @@ int main() {
     elem(v, 2, 16, 5, 2, 0);
     elem(v, 3, 20, 2, 3, 0);
     elem(v, 4, 32, 1, 5, 0);
-    end(v);
+    check_end(v);
 
     assert(reflex_d3d9::fvf_declaration(0x4002u, v));
     assert(v.size() == 16u);
     elem(v, 0, 0, 3, 0, 0);
-    end(v);
+    check_end(v);
 
     // Malformed layouts cannot overwrite the last successful declaration.
     const auto original = v;
