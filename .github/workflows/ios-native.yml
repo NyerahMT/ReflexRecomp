@@ -83,7 +83,9 @@ jobs:
       - name: Configure unsigned ARM64 compilation
         run: |
           set -euo pipefail
-          # No developer signing identity required for this compile-only gate.
+          # An unsigned compile still needs a nonempty team value for kit CMake
+          # configuration. 0000000000 is deliberately NOT a signing identity;
+          # Xcode signing is explicitly disabled for the compile-only run.
           python3 - <<'PY'
           from pathlib import Path
           path = Path("kit/tools/build.py")
@@ -107,7 +109,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/logs
-          .venv/bin/python tools/build.py --target ios --no-install --jobs 6 \
+          .venv/bin/python tools/build.py --target ios --no-install --team 0000000000 --jobs 6 \
             2>&1 | tee build/logs/native-arm64-ios.log
 
       - name: Record ARM64 compile result

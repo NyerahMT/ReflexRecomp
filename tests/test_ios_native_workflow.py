@@ -8,7 +8,7 @@ WORKFLOW = (Path(__file__).resolve().parents[1] /
 def test_real_original_game_ios_compile():
     assert 'runs-on: macos-15' in WORKFLOW
     assert 'test -s build/recomp/gen/table.c' in WORKFLOW
-    assert '--target ios --no-install --jobs 6' in WORKFLOW
+    assert '--target ios --no-install --team 0000000000 --jobs 6' in WORKFLOW
     assert '--stub' not in WORKFLOW
     assert 'CODE_SIGNING_ALLOWED=NO' in WORKFLOW
     assert 'REFLEX_INPUT_TOKEN' in WORKFLOW
