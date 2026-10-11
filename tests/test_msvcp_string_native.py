@@ -52,34 +52,44 @@ uint32_t heap_alloc(uint32_t size, bool = false) {
 
 HARNESS_END = r"""
 static void setup_string(uint32_t address, const std::string &value) {
-    assert(gm_valid(address, 24));
-    memset(g_mem + address, 0, 24);
+    assert(gm_valid(address, 28));
+    memset(g_mem + address, 0, 28);
     const uint32_t n = static_cast<uint32_t>(value.size());
     if (n <= 15) {
-        memcpy(g_mem + address, value.data(), n);
-        wr32(address + 20, 15);
+        memcpy(g_mem + address + 4, value.data(), n);
+        wr32(address + 24, 15);
     } else {
         const uint32_t data = 800;
         memcpy(g_mem + data, value.data(), n);
         g_mem[data + n] = 0;
-        wr32(address, data);
-        wr32(address + 20, n);
+        wr32(address + 4, data);
+        wr32(address + 24, n);
     }
-    wr32(address + 16, n);
+    wr32(address + 20, n);
 }
 static std::string data_at(uint32_t obj) {
     const auto data = msvcp_string_data(obj);
     return std::string(reinterpret_cast<const char*>(g_mem + data),
-                       rd32(obj + 16));
+                       rd32(obj + 20));
 }
 
 int main() {
     setup_string(100, "hello small");
+    assert(rd32(100 + 24) == 15u);
+    assert(memcmp(g_mem + 100 + 4, "hello small", 11) == 0);
     assert(msvcp_string_copy_into(200, 100));
     assert(data_at(200) == "hello small");
-    assert(rd32(200 + 20) == 15u);
+    assert(rd32(200 + 24) == 15u);
     assert(msvcp_string_copy_into(200, 200));
     assert(data_at(200) == "hello small");
+
+    // Regression for the resource-finalizer key that exposed the +4 layout.
+    setup_string(240, "Intro.");
+    assert(rd32(240) == 0u);
+    assert(rd32(240 + 20) == 6u);
+    assert(rd32(240 + 24) == 15u);
+    assert(memcmp(g_mem + 244, "Intro.", 6) == 0);
+    assert(data_at(240) == "Intro.");
 
     // Destination overlaps the source's small inline storage and fields.
     setup_string(300, "overlap-test");
@@ -90,14 +100,14 @@ int main() {
     setup_string(600, large);
     assert(msvcp_string_copy_into(700, 600));
     assert(data_at(700) == large);
-    assert(rd32(700 + 20) == large.size());
-    assert(rd32(700) != rd32(600));
+    assert(rd32(700 + 24) == large.size());
+    assert(rd32(700 + 4) != rd32(600 + 4));
 
     setup_string(1000, large);
-    memset(g_mem + 1100, 0xa5, 24);
+    memset(g_mem + 1100, 0xa5, 28);
     fail_alloc = true;
     assert(!msvcp_string_copy_into(1100, 1000));
-    for (unsigned i = 0; i < 24; ++i)
+    for (unsigned i = 0; i < 28; ++i)
         assert(g_mem[1100 + i] == 0xa5);
     return 0;
 }
