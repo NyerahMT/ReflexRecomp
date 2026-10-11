@@ -6,6 +6,7 @@
 // D3DDECL_END (stream=0xff, type=17).
 #include <cstdint>
 #include <vector>
+#include <utility>
 
 namespace reflex_d3d9 {
 
@@ -24,7 +25,7 @@ inline bool fvf_declaration(uint32_t fvf, std::vector<uint8_t> &result) {
         kLastColor | kTexSizeBits;
     const uint32_t position = fvf & kPositionMask;
     const uint32_t tex_count = (fvf & kTexCountMask) >> 8u;
-    if ((fvf & ~kValidMask) || tex_count > 8 || (fvf & kLastUbyte4 && fvf & kLastColor))
+    if ((fvf & ~kValidMask) || tex_count > 8 || ((fvf & kLastUbyte4) && (fvf & kLastColor)))
         return false;
     // 0x002=XYZ, 0x004=XYZRHW, 0x006..0x00e=XYZB1..XYZB5,
     // 0x4002=XYZW. All other position encodings are invalid.
