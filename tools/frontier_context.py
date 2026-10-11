@@ -149,6 +149,23 @@ def print_resource_string_references(root: Path) -> None:
         print("  none")
 
 
+def print_wide_crt_metadata(root: Path):
+    terms = ("wcsncpy", "wcsrchr", "wcspbrk", "swprintf_s")
+    print("wide-crt-metadata:")
+    hits = 0
+    for path in sorted(root.glob("*.tsv")):
+        for raw in path.read_text(errors="replace").splitlines():
+            low = raw.lower()
+            if any(term in low for term in terms):
+                print(f"  {path.name}: {raw}")
+                hits += 1
+                if hits >= 80:
+                    print("  ... truncated")
+                    return
+    if hits == 0:
+        print("  none")
+
+
 def print_stdio_metadata(root: Path):
     terms = ("fopen", "fread", "fgets", "fseek", "ftell", "fclose", "rewind")
     print("stdio-metadata:")
@@ -322,6 +339,7 @@ def main():
         print_callers(args.listing_root, "0x00543b30", 48)
         print_callers(args.listing_root, "0x005dbcb0", 48)
         print_callers(args.listing_root, "0x007ae3a0", 48)
+        print_wide_crt_metadata(args.listing_root)
         print_metadata_matches(args.listing_root, ["0091600c", "009160f8", "00916014", "00916078", "009162bc", "language.txt"])
         print_callers(args.listing_root, "0x0084a7f0", 60)
         print_callers(args.listing_root, "0x0084c190", 60)
