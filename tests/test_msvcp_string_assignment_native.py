@@ -54,58 +54,62 @@ void heap_free(uint32_t p) {
 
 SUFFIX = r"""
 void setup_string(uint32_t obj, const std::string &value) {
-    assert(gm_valid(obj, 24));
-    memset(g_mem + obj, 0, 24);
+    assert(gm_valid(obj, 28));
+    memset(g_mem + obj, 0, 28);
     const uint32_t n = static_cast<uint32_t>(value.size());
     if (n <= 15) {
-        memcpy(g_mem + obj, value.data(), n);
-        wr32(obj + 20, 15);
+        memcpy(g_mem + obj + 4, value.data(), n);
+        wr32(obj + 24, 15);
     } else {
         const uint32_t buffer = heap_alloc(n + 1u);
         assert(buffer);
         memcpy(g_mem + buffer, value.data(), n);
         g_mem[buffer + n] = 0;
-        wr32(obj, buffer);
-        wr32(obj + 20, n);
+        wr32(obj + 4, buffer);
+        wr32(obj + 24, n);
     }
-    wr32(obj + 16, n);
+    wr32(obj + 20, n);
 }
 std::string value_at(uint32_t obj) {
     const uint32_t data = msvcp_string_data(obj);
     return std::string(reinterpret_cast<const char*>(g_mem + data),
-                       rd32(obj + 16));
+                       rd32(obj + 20));
 }
 int main() {
     setup_string(100, "old");
     setup_string(200, "Intro.ENG");
+    assert(rd32(200) == 0u);
+    assert(rd32(200 + 20) == 9u);
+    assert(rd32(200 + 24) == 15u);
+    assert(memcmp(g_mem + 204, "Intro.ENG", 9) == 0);
     assert(msvcp_string_assign_from(100, 200));
     assert(value_at(100) == "Intro.ENG");
 
     setup_string(300, std::string(80, 'A'));
-    const uint32_t old_heap = rd32(300);
+    const uint32_t old_heap = rd32(300 + 4);
     assert(msvcp_string_assign_from(300, 200));
     assert(value_at(300) == "Intro.ENG");
     assert(!heap_owns(old_heap));
 
     setup_string(400, "short");
     setup_string(500, std::string(90, 'B'));
-    const uint32_t source_heap = rd32(500);
+    const uint32_t source_heap = rd32(500 + 4);
     assert(msvcp_string_assign_from(400, 500));
     assert(value_at(400) == std::string(90, 'B'));
-    assert(rd32(400) != source_heap);
+    assert(rd32(400 + 4) != source_heap);
     g_mem[source_heap] = 'C';
     assert(value_at(400) == std::string(90, 'B'));
 
     setup_string(600, std::string(35, 'D'));
-    const uint32_t previous_heap = rd32(600);
+    const uint32_t previous_heap = rd32(600 + 4);
     assert(msvcp_string_assign_from(600, 500));
     assert(!heap_owns(previous_heap));
     assert(value_at(600).size() == 90);
     assert(value_at(600)[0] == 'C');
 
-    const uint32_t self_ptr = rd32(500);
+    const uint32_t self_ptr = rd32(500 + 4);
     assert(msvcp_string_assign_from(500, 500));
-    assert(rd32(500) == self_ptr && heap_owns(self_ptr));
+    assert(rd32(500 + 4) == self_ptr && heap_owns(self_ptr));
 
     setup_string(700, "unchanged");
     fail_alloc = true;
