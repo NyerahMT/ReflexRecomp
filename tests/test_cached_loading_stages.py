@@ -15,13 +15,13 @@ patch = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(patch)
 
 
-def make_chunk(dir: Path, missing: str | None = None) -> Path:
+def make_chunk(dir: Path, missing: str | None = None, *, split_body: bool = False) -> Path:
     dir.mkdir(parents=True)
     output = dir / "chunk_07.c"
     addresses = [x for x in patch.STAGES if x != missing]
     body = (
         "#include <stdint.h>\n"
-        "void fn_0075ed60(X86 *c) {\n"
+        ("static void body_0075ed60(X86 *c, uint32_t entry_) {\n"\n         if split_body else "void fn_0075ed60(X86 *c) {\n")
         + "".join(f"    stub_instruction(); /* {site} CALL */\n" for site in addresses)
         + "}\n"
     )
@@ -81,3 +81,13 @@ def test_selected_instructions_from_original_disassembly():
     # the actual IAT call to KERNEL32!SetEvent, not a synthetic signal.
     assert patch.STAGES[0] == "0075ed6f"
     assert patch.STAGES[-1] == "0075f293"
+
+
+def test_generated_direct_call_body_symbol(tmp_path):
+    generated = tmp_path / "gen"
+    chunk = make_chunk(generated, split_body=True)
+    patch.patch_loading_stages(generated)
+    result = chunk.read_text()
+    assert result.count("[reflex-load-stage]") == len(patch.STAGES)
+    assert "static void body_0075ed60" in result
+    assert patch.patch_loading_stages(generated) == chunk
