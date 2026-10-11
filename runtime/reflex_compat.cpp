@@ -7,6 +7,7 @@
 #include "imports.h"
 #include "memory.h"
 #include "reflex_crt_numeric.h"
+#include "reflex_crt_wide_format.h"
 
 #include <algorithm>
 #include <atomic>
@@ -2052,6 +2053,22 @@ void crt_mbstowcs_s(X86 *c) {
     set_eax(c, rc);
 }
 
+void crt_swprintf_s(X86 *c) {
+    const uint32_t dst = arg(c, 0);
+    const uint32_t capacity = arg(c, 1);
+    const uint32_t format = arg(c, 2);
+    const uint64_t va64 = uint64_t(c->r[R_ESP]) + 16u;
+    const int written = va64 <= UINT32_MAX
+        ? reflex_crt::guest_swprintf_s(g_mem, GUEST_SIZE, dst, capacity,
+                                       format, static_cast<uint32_t>(va64))
+        : -1;
+    static std::atomic<uint32_t> samples{0};
+    if (samples.fetch_add(1, std::memory_order_relaxed) < 8u)
+        fprintf(stderr, "[reflex-crt] swprintf_s dst=%08x cap=%u fmt=%08x "
+                        "written=%d\n", dst, capacity, format, written);
+    set_eax(c, static_cast<uint32_t>(written));
+}
+
 void crt_wcsncpy(X86 *c) {
     const uint32_t dst = arg(c, 0);
     const uint32_t src = arg(c, 1);
@@ -2561,6 +2578,7 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "memmove_s", ARGC_CDECL, crt_memmove_s},
     {"MSVCR90.dll", "mbstowcs_s", ARGC_CDECL, crt_mbstowcs_s},
     {"MSVCR90.dll", "wcsncpy", ARGC_CDECL, crt_wcsncpy},
+    {"MSVCR90.dll", "swprintf_s", ARGC_CDECL, crt_swprintf_s},
     {"MSVCR90.dll", "wcsrchr", ARGC_CDECL, crt_wcsrchr},
     {"MSVCR90.dll", "wcspbrk", ARGC_CDECL, crt_wcspbrk},
     {"MSVCR90.dll", "_CRT_RTC_INITW", ARGC_CDECL, crt_rtc_initw},
