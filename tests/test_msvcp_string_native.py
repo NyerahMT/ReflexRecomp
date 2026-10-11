@@ -12,7 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPAT = ROOT / "runtime" / "reflex_compat.cpp"
-BEGIN = "uint32_t msvcp_string_data(uint32_t object) {"
+BEGIN = "constexpr uint32_t kMsvcpStringObjectSize = 28u;"
 END = "void msvcp_string_ctor_copy(X86 *c) {"
 
 HARNESS_START = r"""
