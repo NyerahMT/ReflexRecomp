@@ -17,7 +17,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED = ROOT / "build/recomp/gen"
-FUNCTION = "void fn_0075ed60(X86 *c) {\n"
+FUNCTIONS = (\n    "void fn_0075ed60(X86 *c) {\\n",\n    "static void body_0075ed60(X86 *c, uint32_t entry_) {\\n",\n)
 MARKER = "reflex-loading-stage-v1"
 
 # These addresses are taken from the original executable's disassembly.
@@ -47,7 +47,7 @@ def patch_loading_stages(generated: Path) -> Path:
 
     found = [(path, source) for path in chunks
              if (source := path.read_text()) and
-             (FUNCTION in source or MARKER in source)]
+             (any(fn in source for fn in FUNCTIONS) or MARKER in source)]
     if len(found) != 1:
         raise RuntimeError(f"Expected one 0075ed60 translation, got {len(found)}")
     path, source = found[0]
@@ -58,7 +58,7 @@ def patch_loading_stages(generated: Path) -> Path:
         return path
 
     sites = [m.group(2) for m in TARGET.finditer(source)]
-    if source.count(FUNCTION) != 1 or sorted(sites) != sorted(STAGES):
+    if sum(source.count(fn) for fn in FUNCTIONS) != 1 or sorted(sites) != sorted(STAGES):
         raise RuntimeError(f"Expected exactly {STAGES}; actual={sites}")
 
     def emit(match: re.Match[str]) -> str:
