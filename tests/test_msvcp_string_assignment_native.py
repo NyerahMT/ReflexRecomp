@@ -126,7 +126,7 @@ def test_guest_string_copy_assignment(tmp_path):
     if not compiler:
         pytest.skip("no native compiler installed")
     source = COMPAT.read_text()
-    copy = source[source.index("uint32_t msvcp_string_data(uint32_t object) {"):
+    copy = source[source.index("constexpr uint32_t kMsvcpStringObjectSize = 28u;"):
                   source.index("void msvcp_string_ctor_copy(X86 *c) {")]
     assign = source[source.index("bool msvcp_string_assign_value(uint32_t self, const std::string &value) {"):
                     source.index("void msvcp_string_assign_copy(X86 *c) {")]
