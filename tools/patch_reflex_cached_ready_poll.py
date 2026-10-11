@@ -70,7 +70,7 @@ def patch_ready_poll(generated: Path) -> list[Path]:
 {indent}        fprintf(stderr,
 {indent}                "[reflex-ready-poll] pc={site} n=%llu value=%08x "
 {indent}                "obj=%08x method=%08x keyA=%08x keyB=%08x "
-{indent}                "esp=%08x\\\\n",
+{indent}                "esp=%08x\\n",
 {indent}                (unsigned long long)n, c->r[0], obj, method,
 {indent}                c->r[3], c->r[7], c->r[4]);
 {indent}    }}
