@@ -12,7 +12,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPAT = ROOT / "runtime" / "reflex_compat.cpp"
-BEGIN = "constexpr uint32_t kMsvcpStringObjectSize = 28u;"
+CONSTANTS_BEGIN = "constexpr uint32_t kMsvcpStringObjectSize = 28u;"
+CONSTANTS_END = "void msvcp_string_ctor_default(X86 *c) {"
+BEGIN = "uint32_t msvcp_string_data(uint32_t object) {"
 END = "void msvcp_string_ctor_copy(X86 *c) {"
 
 HARNESS_START = r"""
@@ -119,11 +121,18 @@ def test_native_msvcp_copy_alias_and_allocation_failure(tmp_path):
     if compiler is None:
         pytest.skip("no native C++ compiler available")
     content = COMPAT.read_text()
+    constants_start = content.index(CONSTANTS_BEGIN)
+    constants_end = content.index(CONSTANTS_END, constants_start)
     start, end = content.index(BEGIN), content.index(END)
-    assert start < end
+    assert constants_start < constants_end and start < end
     source = tmp_path / "test_string.cpp"
     binary = tmp_path / "test_string"
-    source.write_text(HARNESS_START + "\n" + content[start:end] + "\n" + HARNESS_END)
+    source.write_text(
+        HARNESS_START + "\n"
+        + content[constants_start:constants_end] + "\n"
+        + content[start:end] + "\n"
+        + HARNESS_END
+    )
     subprocess.run(
         [compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror",
          str(source), "-o", str(binary)],
