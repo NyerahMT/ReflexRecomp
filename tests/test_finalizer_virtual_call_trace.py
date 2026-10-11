@@ -15,7 +15,6 @@ SPEC.loader.exec_module(mod)
 def fixture():
     return (
         '#include <stdint.h>\n'
-        '#include <stdbool.h>\n'
         '#include <stdio.h>\n'
         '#define GUEST_SIZE 0x20000000u\n'
         '#define R_EAX 0\n#define R_ECX 1\n#define R_EDX 2\n'

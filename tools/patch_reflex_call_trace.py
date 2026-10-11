@@ -30,12 +30,12 @@ def main():
     if (trace_ret == 0x00543d68u || trace_ret == 0x00543d86u) {
         static uint64_t query_calls = 0u;
         static uint64_t load_calls = 0u;
-        const bool is_load = trace_ret == 0x00543d86u;
+        const int is_load = trace_ret == 0x00543d86u;
         uint64_t n = is_load
             ? __atomic_add_fetch(&load_calls, 1u, __ATOMIC_RELAXED)
             : __atomic_add_fetch(&query_calls, 1u, __ATOMIC_RELAXED);
         if (n <= 16u || (n & (n - 1u)) == 0u) {
-            const bool valid_stack = trace_esp >= 0x10000u
+            const int valid_stack = trace_esp >= 0x10000u
                 && (uint64_t)trace_esp + 12u <= GUEST_SIZE;
             fprintf(stderr,
                     "[reflex-finalizer-call] phase=%s n=%llu site=%08x "
