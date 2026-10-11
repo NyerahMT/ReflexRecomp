@@ -65,6 +65,12 @@ void reflex_steam_register_callback(X86 *c) {
     set_eax(c, 0);
 }
 
+void reflex_steam_user(X86 *c) {
+    // Original SteamUser export returns ISteamUser*. Offline mode has no session.
+    // Match the existing unimplemented import's nullptr result but preserve cdecl.
+    set_eax(c, 0);
+}
+
 void reflex_steam_user_stats(X86 *c) {
     // No Steam backend is attached to the recompiled process yet.
     set_eax(c, 0);
@@ -2577,6 +2583,7 @@ const ImportShim k_reflex_shims[] = {
     {"steam_api.dll", "SteamAPI_RegisterCallback", ARGC_CDECL,
      reflex_steam_register_callback},
     {"steam_api.dll", "SteamUserStats", ARGC_CDECL, reflex_steam_user_stats},
+    {"steam_api.dll", "SteamUser", ARGC_CDECL, reflex_steam_user},
     {"steam_api.dll", "SteamAPI_RunCallbacks", ARGC_CDECL, reflex_steam_run_callbacks},
     {"steam_api.dll", "SteamAPI_Shutdown", ARGC_CDECL, reflex_steam_shutdown},
 
