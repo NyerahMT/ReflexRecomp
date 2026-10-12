@@ -49,6 +49,7 @@ on:
       - "tools/patch_reflex_cached_resource_find.py"
       - "tools/audit_translation_traps.py"
       - "tools/check_reflex_boot_progress.py"
+      - "tools/profile_reflex_decoder.py"
       - "tools/patch_reflex_interp.py"
       - "tools/refresh_cached_function.py"
       - "tools/patch_reflex_seh.py"
@@ -461,6 +462,48 @@ jobs:
           grep '\[reflex-ui-consumer\]' build/logs/runtime-intro-probe.log | tail -n 20 || true
           grep "\[reflex-ui-result\]" build/logs/runtime-intro-probe.log | tail -n 15 || true
           exit 0
+
+      # One-off controlled comparison. The merge commit title carries
+      # [decoder-profile]; ordinary fast iterations retain the 15s probe.
+      # Same executable/runtime environment, only the timeout differs.
+      - name: Profile MXTables decoder for 60 seconds
+        if: steps.host.outcome == 'success' && github.event_name == 'push' && contains(github.event.head_commit.message, '[decoder-profile]')
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          app="$GITHUB_WORKSPACE/build/package/ReflexRecomp/ReflexRecomp"
+          test -x "$app"
+          set +e
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            timeout --signal=TERM --kill-after=5s 60s \
+            env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
+                RECOMP_LOG=1 \
+                REFLEX_FRAME_PROBE=1 \
+                REFLEX_FFP_QUAD=1 \
+                RECOMP_WATCH_FRAME=1 \
+                SDL_AUDIODRIVER=dummy \
+                "$app" \
+            >build/logs/runtime-profile-60s.log 2>&1
+          rc=$?
+          set -e
+          echo "$rc" > build/logs/runtime-profile-60s-exit.txt
+          echo "60-second controlled MXTables run exit=$rc (124=timeout, 137=forced kill)"
+          python3 tools/profile_reflex_decoder.py \
+            build/logs/runtime.log \
+            build/logs/runtime-profile-60s.log \
+            --control-seconds 15 --extended-seconds 60 \
+            --output build/logs/runtime-decoder-throughput.txt
+          # Long-run progress is diagnostic, not a gameplay-boot success claim.
+          python3 tools/check_reflex_boot_progress.py \
+            build/logs/runtime-profile-60s.log \
+            >build/logs/runtime-profile-60s-progress.txt 2>&1 || true
+          cat build/logs/runtime-profile-60s-progress.txt
+          if grep -Eq 'SEH: unhandled|call to unknown target|call to 00000000|unknown stdcall argument count' \
+              build/logs/runtime-profile-60s.log; then
+            echo "::warning::Extended decoder run encountered a guest ABI/control-flow fault."
+            grep -E 'SEH: unhandled|call to unknown target|call to 00000000|unknown stdcall argument count' \
+              build/logs/runtime-profile-60s.log | tail -n 25 || true
+          fi
 
       - name: Upload fast-path logs
         if: always()
