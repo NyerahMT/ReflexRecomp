@@ -273,7 +273,7 @@ jobs:
           python3 tools/patch_reflex_cached_type1_gap.py
           python3 tools/patch_reflex_cached_type1_single.py
           python3 tools/patch_reflex_cached_type1_callback.py
-          python3 tools/patch_reflex_cached_type1_decoder.py
+          python3 tools/patch_reflex_cached_type1_decoder.py --mode heartbeat
           python3 tools/patch_reflex_cached_type1_branch.py \
             --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
             --output build/logs/reflex-callback-branch-target.txt
