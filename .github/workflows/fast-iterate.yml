@@ -38,6 +38,7 @@ on:
       - "tools/patch_reflex_cached_type1_gap.py"
       - "tools/patch_reflex_cached_type1_single.py"
       - "tools/patch_reflex_cached_type1_callback.py"
+      - "tools/patch_reflex_cached_type1_decoder.py"
       - "tools/patch_reflex_cached_type1_branch.py"
       - "tools/inspect_reflex_loader_asm.py"
       - "tools/patch_reflex_cached_ui_lookup.py"
@@ -271,6 +272,7 @@ jobs:
           python3 tools/patch_reflex_cached_type1_gap.py
           python3 tools/patch_reflex_cached_type1_single.py
           python3 tools/patch_reflex_cached_type1_callback.py
+          python3 tools/patch_reflex_cached_type1_decoder.py
           python3 tools/patch_reflex_cached_type1_branch.py \
             --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
             --output build/logs/reflex-callback-branch-target.txt
@@ -313,6 +315,12 @@ jobs:
             --start 0x004f018f --end 0x004f01bb \
             --sites 004f0199 \
             --output build/logs/type1-decoder-frontier-window.txt
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --generated build/recomp/gen \
+            --start 0x004eefa0 --end 0x004ef025 \
+            --sites 004eefa0,004f0199 \
+            --output build/logs/type1-inner-decoder-window.txt
 
       - name: Audit cached translation opcode coverage
         run: |
