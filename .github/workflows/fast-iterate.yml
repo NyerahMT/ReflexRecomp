@@ -37,6 +37,7 @@ on:
       - "tools/patch_reflex_cached_type1_body.py"
       - "tools/patch_reflex_cached_type1_gap.py"
       - "tools/patch_reflex_cached_type1_single.py"
+      - "tools/patch_reflex_cached_type1_callback.py"
       - "tools/inspect_reflex_loader_asm.py"
       - "tools/patch_reflex_cached_ui_lookup.py"
       - "tools/patch_reflex_cached_ui_boolean.py"
@@ -268,6 +269,7 @@ jobs:
           python3 tools/patch_reflex_cached_type1_body.py
           python3 tools/patch_reflex_cached_type1_gap.py
           python3 tools/patch_reflex_cached_type1_single.py
+          python3 tools/patch_reflex_cached_type1_callback.py
           python3 tools/patch_reflex_cached_ui_lookup.py
           python3 tools/patch_reflex_cached_ui_boolean.py
           python3 tools/patch_reflex_cached_ui_consumer.py
@@ -289,6 +291,12 @@ jobs:
             --start 0x0084beed --end 0x0084bf20 \
             --sites 0084beef,0084bf12 \
             --output build/logs/type1-callback-asm-window.txt
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --generated build/recomp/gen \
+            --start 0x0084ad10 --end 0x0084ad90 \
+            --sites 0084ad10,0084beef \
+            --output build/logs/type1-callee-asm-window.txt
 
       - name: Audit cached translation opcode coverage
         run: |
