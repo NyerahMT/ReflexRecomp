@@ -16,7 +16,7 @@ spec.loader.exec_module(decoder)
 def fixture(directory, missing="", duplicate=""):
     directory.mkdir()
     groups = (
-        ("004eefa0", "004eefa1", "004ef017", "004ef210", "004ef3ff"),
+        ("004eefa0", "004eefa1", "004ef017", "004ef210", "004ef3ff", "004ef400", "004ef710", "004ef7ff"),
         ("004f019e",),
     )
     for i, group in enumerate(groups):
@@ -30,7 +30,7 @@ def fixture(directory, missing="", duplicate=""):
             "static uint32_t rd32(uint32_t p) { return p; }\n"
             "static void f(X86 *c) {\n"
             + "".join(f"    (void)c; /* {pc} MOV */\n" for pc in pcs)
-            + "    (void)c; /* 004ef400 RET */\n}\n"
+            + "    (void)c; /* 004ef800 RET */\n}\n"
         )
 
 
@@ -39,14 +39,14 @@ def test_precise_sites_idempotent_and_bounded(tmp_path):
     fixture(d)
     paths, pcs = decoder.patch_inner_decoder(d)
     assert len(paths) == 2
-    assert {"004eefa0", "004ef3ff", "004f019e"}.issubset(pcs)
-    assert "004ef400" not in pcs
+    assert {"004eefa0", "004ef3ff", "004ef400", "004ef7ff", "004f019e"}.issubset(pcs)
+    assert "004ef800" not in pcs
     original = [p.read_text() for p in paths]
     for content in original:
         assert content.count(decoder.MARKER + " at ") == content.count(
             "[reflex-mxtables-inner]")
         assert "sp0=%08x sp4=%08x" in content
-        assert "at 004ef400" not in content
+        assert "at 004ef800" not in content
     assert decoder.patch_inner_decoder(d) == (paths, pcs)
     assert [p.read_text() for p in paths] == original
 
