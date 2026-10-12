@@ -40,6 +40,22 @@ def test_empty_trace_reports_no_progress():
     assert "NO DECODE RETURN OBSERVED" in loader.report("", "", 840)
 
 
+def test_extended_startup_includes_its_own_sixty_second_control():
+    # A '[long-load]' push previously skipped the decoder control, then
+    # failed before executing its 14-minute original-game startup probe.
+    workflow = (ROOT / ".github" / "workflows" / "fast-iterate.yml").read_text()
+    control = workflow.split(
+        "- name: Profile MXTables decoder for 60 seconds", 1)[1].split(
+        "- name: Compare one Mesa worker", 1)[0]
+    qualification = workflow.split(
+        "- name: Qualify original MXTables loading through extended 14-minute run", 1)[1].split(
+        "- name: Upload fast-path logs", 1)[0]
+    assert "contains(github.event.head_commit.message, '[long-load]')" in control
+    assert "contains(github.event.head_commit.message, '[decoder-profile]')" in control
+    assert "runtime-profile-60s.log" in qualification
+    assert "Missing 60-second decoder control" in qualification
+
+
 @pytest.mark.parametrize("seconds", [0, -100])
 def test_invalid_window_fails(seconds):
     with pytest.raises(ValueError):
