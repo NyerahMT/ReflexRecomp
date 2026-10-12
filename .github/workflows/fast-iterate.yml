@@ -51,6 +51,7 @@ on:
       - "tools/check_reflex_boot_progress.py"
       - "tools/profile_reflex_decoder.py"
       - "tools/sample_reflex_native_threads.py"
+      - "tools/compare_reflex_decoder_variants.py"
       - "tools/patch_reflex_interp.py"
       - "tools/refresh_cached_function.py"
       - "tools/patch_reflex_seh.py"
@@ -505,6 +506,46 @@ jobs:
             grep -E 'SEH: unhandled|call to unknown target|call to 00000000|unknown stdcall argument count' \
               build/logs/runtime-profile-60s.log | tail -n 25 || true
           fi
+
+      # A/B Mesa software rasterizer contention without changing the game.
+      # [decoder-profile] also triggers the normal 60-second control above.
+      - name: Compare one Mesa worker against default rasterizer
+        if: steps.host.outcome == 'success' && github.event_name == 'push' && contains(github.event.head_commit.message, '[mesa-profile]')
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          app="$GITHUB_WORKSPACE/build/package/ReflexRecomp/ReflexRecomp"
+          test -x "$app"
+          test -s build/logs/runtime-profile-60s.log || {
+            echo "::warning::Missing same-duration default-Mesa control profile."
+            exit 1
+          }
+          set +e
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            timeout --signal=TERM --kill-after=5s 60s \
+            env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
+                RECOMP_LOG=1 \
+                REFLEX_FRAME_PROBE=1 \
+                REFLEX_FFP_QUAD=1 \
+                RECOMP_WATCH_FRAME=1 \
+                LP_NUM_THREADS=1 \
+                SDL_AUDIODRIVER=dummy \
+                "$app" \
+            >build/logs/runtime-mesa-lp1.log 2>&1
+          rc=$?
+          set -e
+          echo "$rc" >build/logs/runtime-mesa-lp1-exit.txt
+          echo "60-second Mesa 1-worker exit: $rc"
+          python3 tools/compare_reflex_decoder_variants.py \
+            build/logs/runtime-profile-60s.log \
+            build/logs/runtime-mesa-lp1.log \
+            --seconds 60 --output build/logs/mesa-worker-ab.txt
+          grep '\[reflex-frame\] present' build/logs/runtime-mesa-lp1.log \
+            | tail -n 4 || true
+          python3 tools/check_reflex_boot_progress.py \
+            build/logs/runtime-mesa-lp1.log \
+            >build/logs/runtime-mesa-lp1-progress.txt 2>&1 || true
+          cat build/logs/runtime-mesa-lp1-progress.txt
 
       # One-time read-only CPU/wchan observation of real native threads.
       # The game binary, assets and resource readiness are unchanged.
