@@ -26,6 +26,8 @@ def patch_source(original: str) -> str:
             "    uint32_t t0 = 0, paused_at = 0, count = 0, current = 1;\n"
             "    uint32_t registered_frame_buffers = 0;\n"
             "    bool sound_enabled = true;\n"
+            "    int32_t volume_mb = 0;\n"
+            "    int64_t seek_target_pts = AV_NOPTS_VALUE;\n"
         ),
         (
             "    if (p.paused || !p.audio || p.failed || p.audio_unavailable)\n",
@@ -61,7 +63,19 @@ bool reflex_copy_registered_frame(BinkPlayer &p) {
 // Decode exactly one visible frame. Audio prefetch may already have retained"""
         ),
         (
+            "                host_audio_play(&play);\n",
+            "                host_audio_play(&play);\n"
+            "                host_audio_set_volume(p.channel, p.volume_mb);\n"
+        ),
+        (
             "            p->have_frame = true;\n            service_audio(rec, *p);\n",
+            "            if (p->seek_target_pts != AV_NOPTS_VALUE &&\n"
+            "                p->frame->best_effort_timestamp != AV_NOPTS_VALUE &&\n"
+            "                p->frame->best_effort_timestamp < p->seek_target_pts) {\n"
+            "                av_frame_unref(p->frame);\n"
+            "                continue;\n"
+            "            }\n"
+            "            p->seek_target_pts = AV_NOPTS_VALUE;\n"
             "            p->have_frame = true;\n"
             "            if (!reflex_copy_registered_frame(*p)) {\n"
             "                p->failed = true;\n"
@@ -130,6 +144,92 @@ void BinkSetSoundOnOff(X86 *c) {
     set_eax(c, result);
 }
 
+// The Bink 1 SDK uses 0..32768 amplitude; the host audio channel
+// accepts attenuation in hundredths of a decibel.
+void BinkSetVolume(X86 *c) {
+#ifdef RECOMP_HAVE_FFMPEG
+    if (BinkPlayer *p = player_for(arg(c, 0))) {
+        const int32_t requested = static_cast<int32_t>(arg(c, 2));
+        const double gain = std::max(0.0, std::min(1.0,
+                              static_cast<double>(requested) / 32768.0));
+        p->volume_mb = gain <= 0.0 ? -10000
+                       : static_cast<int32_t>(std::max(-10000.0,
+                             2000.0 * std::log10(gain)));
+        if (p->channel >= 0)
+            host_audio_set_volume(p->channel, p->volume_mb);
+    }
+#endif
+    set_eax(c, 0); // void stdcall
+}
+
+// A frame is skippable only when the next frame's presentation deadline
+// already passed. Never advance the video/decoder inside this query.
+void BinkShouldSkip(X86 *c) {
+    uint32_t skip = 0;
+#ifdef RECOMP_HAVE_FFMPEG
+    if (BinkPlayer *p = player_for(arg(c, 0))) {
+        if (!p->paused && !p->failed && p->have_frame &&
+            p->current < p->count) {
+            const int64_t next_due = av_rescale_rnd(
+                static_cast<int64_t>(p->current) * 1000,
+                p->fps.den, p->fps.num, AV_ROUND_DOWN);
+            skip = next_due >= 0 &&
+                   static_cast<uint64_t>(host_millis() - p->t0) >
+                       static_cast<uint64_t>(next_due);
+        }
+    }
+#endif
+    set_eax(c, skip);
+}
+
+// Honor the SDK's 1-based target frame. Seek actual compressed video,
+// then flush demuxer queues, codecs, pending PCM, and the presentation timer.
+void BinkGoto(X86 *c) {
+#ifdef RECOMP_HAVE_FFMPEG
+    const uint32_t rec = arg(c, 0);
+    if (BinkPlayer *p = player_for(rec)) {
+        const uint32_t frame = std::max(1u, std::min(arg(c, 1), p->count));
+        AVStream *stream = p->input->streams[p->video_index];
+        const int64_t pts = av_rescale_q(
+            static_cast<int64_t>(frame - 1u), av_inv_q(p->fps),
+            stream->time_base);
+        if (av_seek_frame(p->input, p->video_index, pts,
+                          AVSEEK_FLAG_BACKWARD) < 0) {
+            video_error("BinkGoto could not seek compressed video");
+            set_eax(c, 0);
+            return;
+        }
+        avcodec_flush_buffers(p->video);
+        if (p->audio)
+            avcodec_flush_buffers(p->audio);
+        for (AVPacket *packet : p->video_packets)
+            av_packet_free(&packet);
+        p->video_packets.clear();
+        p->pending.clear();
+        p->pending_pos = 0;
+        if (p->channel >= 0) {
+            host_audio_stop(p->channel);
+            dx_free_audio_channel(p->channel);
+            p->channel = -1;
+        }
+        p->audio_started = false;
+        p->have_frame = false;
+        p->eof = p->flushed = p->failed = false;
+        p->current = frame;
+        p->seek_target_pts = pts;
+        const uint32_t now = host_millis();
+        const int64_t playback_ms = av_rescale_rnd(
+            static_cast<int64_t>(frame - 1u) * 1000,
+            p->fps.den, p->fps.num, AV_ROUND_DOWN);
+        p->t0 = now - static_cast<uint32_t>(playback_ms);
+        if (p->paused)
+            p->paused_at = now;
+        write_frame_count(rec, *p);
+    }
+#endif
+    set_eax(c, 0); // void stdcall
+}
+
 void BinkDDSurfaceType(X86 *c) {
 """
         ),
@@ -139,6 +239,9 @@ void BinkDDSurfaceType(X86 *c) {
             "    BINK(GetFrameBuffersInfo, 8, BinkGetFrameBuffersInfo),\n"
             "    BINK(RegisterFrameBuffers, 8, BinkRegisterFrameBuffers),\n"
             "    BINK(SetSoundOnOff, 8, BinkSetSoundOnOff),\n"
+            "    BINK(SetVolume, 12, BinkSetVolume),\n"
+            "    BINK(ShouldSkip, 4, BinkShouldSkip),\n"
+            "    BINK(Goto, 12, BinkGoto),\n"
         ),
     ]
     # Validate every exact anchor before mutating any upstream source.
