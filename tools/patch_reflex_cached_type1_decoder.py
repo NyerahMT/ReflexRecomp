@@ -51,7 +51,8 @@ def patch_inner_decoder(generated: Path) -> tuple[list[Path], list[str]]:
     pending: list[tuple[Path, str]] = []
     for path, source, hits in selected:
         if MARKER in source:
-            if source.count("/* " + MARKER + " at ") != len(hits):
+            if (source.count("/* " + MARKER + " at ") != len(hits) or
+                    source.count("[reflex-mxtables-inner]") != len(hits)):
                 raise RuntimeError(f"Partially installed decoder trace in {path.name}")
             continue
 
