@@ -332,6 +332,22 @@ jobs:
             --start 0x004ef3f2 --end 0x004ef445 \
             --sites 004ef3fe,004f019e \
             --output build/logs/type1-decoder-next-opcodes.txt
+          # Original instructions around the two repeatable MXTables
+          # checkpoint sites, bounded to < 257 private guest bytes each.
+          # These reports provide an instruction-level optimization target,
+          # without logging proprietary translated functions or assets.
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --generated build/recomp/gen \
+            --start 0x004ef50e --end 0x004ef5b0 \
+            --sites 004ef52e,004ef58a \
+            --output build/logs/mxtables-loop-cost-window.txt
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --generated build/recomp/gen \
+            --start 0x004ef718 --end 0x004ef76c \
+            --sites 004ef73e \
+            --output build/logs/mxtables-loop-exit-window.txt
 
       - name: Audit cached translation opcode coverage
         run: |
