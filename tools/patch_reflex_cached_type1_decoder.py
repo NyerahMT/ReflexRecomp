@@ -23,17 +23,20 @@ FIRST = 0x004EEFA0
 LAST = 0x004EF7FF
 RETURN = "004f019e"
 REQUIRED = {"004eefa0", RETURN}
+HEARTBEAT = {"004eefa0", "004ef3c1", "004ef52e", "004ef58a",
+             "004ef73e", RETURN}
 PATTERN = re.compile(
     r"(?m)^([ \t]*)(?=[^\n]*/\* "
     r"(004e(?:ef|f[0-7])[0-9a-f]{2}|004f019e)\b)[^\n]*$"
 )
 
 
-def patch_inner_decoder(generated: Path) -> tuple[list[Path], list[str]]:
+def patch_inner_decoder(generated: Path, *, heartbeat: bool = False) -> tuple[list[Path], list[str]]:
     chunks = sorted(generated.glob("chunk_*.c"))
     if not chunks:
         raise RuntimeError(f"No translated chunks found: {generated}")
 
+    required = HEARTBEAT if heartbeat else REQUIRED
     found = Counter()
     selected: list[tuple[Path, str, list[str]]] = []
     for path in chunks:
@@ -41,11 +44,13 @@ def patch_inner_decoder(generated: Path) -> tuple[list[Path], list[str]]:
         hits = [m.group(2) for m in PATTERN.finditer(source)
                 if FIRST <= int(m.group(2), 16) <= LAST or
                 m.group(2) == RETURN]
+        if heartbeat:
+            hits = [pc for pc in hits if pc in HEARTBEAT]
         if hits or MARKER in source:
             selected.append((path, source, hits))
             found.update(hits)
 
-    if not REQUIRED.issubset(found) or any(n != 1 for n in found.values()):
+    if not required.issubset(found) or any(n != 1 for n in found.values()):
         raise RuntimeError(f"Missing or duplicate decoder guest PCs: {dict(found)}")
 
     pending: list[tuple[Path, str]] = []
@@ -58,6 +63,8 @@ def patch_inner_decoder(generated: Path) -> tuple[list[Path], list[str]]:
 
         def instrument(m: re.Match[str]) -> str:
             indent, pc = m.group(1), m.group(2)
+            if heartbeat and pc not in HEARTBEAT:
+                return m.group(0)
             if pc != RETURN and not FIRST <= int(pc, 16) <= LAST:
                 return m.group(0)
             return f'''{indent}{{ /* {MARKER} at {pc} */
@@ -101,8 +108,9 @@ def patch_inner_decoder(generated: Path) -> tuple[list[Path], list[str]]:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--generated", type=Path, default=GENERATED)
+    p.add_argument("--mode", choices=("full", "heartbeat"), default="full")
     args = p.parse_args()
-    files, pcs = patch_inner_decoder(args.generated)
+    files, pcs = patch_inner_decoder(args.generated, heartbeat=args.mode == "heartbeat")
     print(f"Tracked nested MXTables decoder ({len(pcs)} actual guest PCs, "
           f"{len(files)} generated chunks)")
 
