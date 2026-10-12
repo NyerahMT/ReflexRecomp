@@ -9,16 +9,18 @@ KIT = ROOT / "kit"
 SOURCE = ROOT / "runtime" / "reflex_compat.cpp"
 NUMERIC_HEADER = ROOT / "runtime" / "reflex_crt_numeric.h"
 WIDE_FORMAT_HEADER = ROOT / "runtime" / "reflex_crt_wide_format.h"
+FAST_STRINGS_HEADER = ROOT / "runtime" / "reflex_crt_fast_strings.h"
 
 
 def stage_compat_headers(destination: Path, numeric: Path = NUMERIC_HEADER,
-                         wide_format: Path = WIDE_FORMAT_HEADER) -> None:
-    # Verify both source headers before changing the staged runtime. The full
-    # original-game build includes reflex_compat.cpp, which needs both.
-    for header in (numeric, wide_format):
+                         wide_format: Path = WIDE_FORMAT_HEADER,
+                         fast_strings: Path = FAST_STRINGS_HEADER) -> None:
+    # Validate all headers before writing any staged runtime file.
+    headers = (numeric, wide_format, fast_strings)
+    for header in headers:
         if not header.is_file():
             raise SystemExit(f"missing {header}")
-    for header in (numeric, wide_format):
+    for header in headers:
         shutil.copyfile(header, destination / header.name)
 
 
