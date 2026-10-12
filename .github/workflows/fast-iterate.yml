@@ -307,6 +307,12 @@ jobs:
             --start 0x0084aec9 --end 0x0084aee8 \
             --sites 0084aed4,004f0170 \
             --output build/logs/type1-nested-call-window.txt
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --generated build/recomp/gen \
+            --start 0x004f018f --end 0x004f01bb \
+            --sites 004f0199 \
+            --output build/logs/type1-decoder-frontier-window.txt
 
       - name: Audit cached translation opcode coverage
         run: |
