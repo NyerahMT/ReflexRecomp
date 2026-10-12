@@ -208,7 +208,10 @@ void crt_stricmp(X86 *c) {
 bool use_reflex_fast_crt_strings() {
     static const bool enabled = [] {
         const char *flag = std::getenv("REFLEX_FAST_CRT_STRINGS");
-        return flag && std::strcmp(flag, "1") == 0;
+        const bool active = flag && std::strcmp(flag, "1") == 0;
+        if (active)
+            std::fprintf(stderr, "[reflex-crt-fast] enabled=1\n");
+        return active;
     }();
     return enabled;
 }
