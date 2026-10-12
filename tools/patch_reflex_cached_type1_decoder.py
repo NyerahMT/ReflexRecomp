@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Trace the nested MXTables decoder called at guest 004f0199.
 
-Fast run #38205477133 reached 004f0199 (CALL 004eefa0), but not the
-return at 004f019e. Follow real translated guest PCs in this callee,
+Fast run #38267569532 executes 004eefa0 through 004ef3fe repeatedly,
+but not return at 004f019e. Follow the next translated guest-PC window,
 scoped to the blocked single-entry resource by the existing host TLS flag.
 
 This probe observes only; it does not touch any guest register, memory,
@@ -20,12 +20,12 @@ GENERATED = ROOT / "build/recomp/gen"
 MARKER = "reflex-mxtables-inner-v1"
 FLAG = "reflex_type1_callback_trace_enabled"
 FIRST = 0x004EEFA0
-LAST = 0x004EF3FF
+LAST = 0x004EF7FF
 RETURN = "004f019e"
 REQUIRED = {"004eefa0", RETURN}
 PATTERN = re.compile(
     r"(?m)^([ \t]*)(?=[^\n]*/\* "
-    r"(004e(?:ef|f0|f1|f2|f3)[0-9a-f]{2}|004f019e)\b)[^\n]*$"
+    r"(004e(?:ef|f[0-7])[0-9a-f]{2}|004f019e)\b)[^\n]*$"
 )
 
 
