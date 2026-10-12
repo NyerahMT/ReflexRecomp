@@ -8,6 +8,7 @@
 #include "memory.h"
 #include "reflex_crt_numeric.h"
 #include "reflex_crt_wide_format.h"
+#include "reflex_crt_fast_strings.h"
 #include "reflex_crt_termination.h"
 
 #include <algorithm>
@@ -202,15 +203,38 @@ void crt_stricmp(X86 *c) {
     set_eax(c, static_cast<uint32_t>(static_cast<int32_t>(rc)));
 }
 
+// Opt-in same-binary benchmark. Keep the older reference implementation
+// available until the native and iOS runtime paths have been validated.
+bool use_reflex_fast_crt_strings() {
+    static const bool enabled = [] {
+        const char *flag = std::getenv("REFLEX_FAST_CRT_STRINGS");
+        const bool active = flag && std::strcmp(flag, "1") == 0;
+        if (active)
+            std::fprintf(stderr, "[reflex-crt-fast] enabled=1\n");
+        return active;
+    }();
+    return enabled;
+}
+
 void crt_strcmp(X86 *c) {
-    const std::string a = gm_str(arg(c, 0));
-    const std::string b = gm_str(arg(c, 1));
+    const uint32_t lhs = arg(c, 0), rhs = arg(c, 1);
+    if (use_reflex_fast_crt_strings()) {
+        const int rc = reflex_crt_fast::bounded_compare(
+            g_mem, GUEST_SIZE, lhs, rhs);
+        set_eax(c, static_cast<uint32_t>(static_cast<int32_t>(rc)));
+        return;
+    }
+    const std::string a = gm_str(lhs), b = gm_str(rhs);
     const int rc = a < b ? -1 : (a > b ? 1 : 0);
     set_eax(c, static_cast<uint32_t>(static_cast<int32_t>(rc)));
 }
 
 void crt_strlen(X86 *c) {
-    set_eax(c, static_cast<uint32_t>(gm_str(arg(c, 0)).size()));
+    const uint32_t guest_ptr = arg(c, 0);
+    const size_t length = use_reflex_fast_crt_strings()
+        ? reflex_crt_fast::bounded_length(g_mem, GUEST_SIZE, guest_ptr)
+        : gm_str(guest_ptr).size();
+    set_eax(c, static_cast<uint32_t>(length));
 }
 
 void crt_strstr(X86 *c) {
