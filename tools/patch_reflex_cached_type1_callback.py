@@ -5,6 +5,9 @@
 Unlike earlier power-of-two logging shared by every resource, this sets a
 thread-local *host diagnostic flag* only for the count=1/base=0 loader.
 The flag never modifies guest memory, registers or readiness state.
+Run #38203360869 confirms the original callback JNE at 0084ad8e
+branches correctly to 0084ae25. Trace the rest of the callback until
+0084b2ff instead of stopping before that taken branch.
 """
 from collections import Counter
 from pathlib import Path
@@ -15,12 +18,12 @@ GENERATED = Path(__file__).resolve().parents[1] / "build/recomp/gen"
 MARKER = "reflex-type1-callback-v1"
 SYMBOL = "reflex_type1_callback_trace_enabled"
 FIRST = int("0084ad10", 16)
-LAST = int("0084adff", 16)
+LAST = int("0084b2ff", 16)
 ENTRY = "0084beef"
 RETURN = "0084bf12"
 REQUIRED = {"0084ad10", ENTRY, RETURN}
 PATTERN = re.compile(
-    r"(?m)^([ \t]*)(?=[^\n]*/\* (0084ad[0-9a-f]{2}|0084beef|0084bf12)\b)[^\n]*$"
+    r"(?m)^([ \t]*)(?=[^\n]*/\* (0084(?:ad|ae|af|b0|b1|b2)[0-9a-f]{2}|0084beef|0084bf12)\b)[^\n]*$"
 )
 
 
