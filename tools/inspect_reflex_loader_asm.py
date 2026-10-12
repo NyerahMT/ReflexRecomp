@@ -9,8 +9,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import re
+import subprocess
 
 ASM = re.compile(r"^\s*([0-9a-fA-F]{8})\s{2,}(\S+)(?:\s+(.*))?$")
+OBJDUMP = re.compile(r"^\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]{2}\s+)+\s*(\S+)(?:\s+(.*))?$")
 DEFAULT_START = 0x0084BE11
 DEFAULT_END = 0x0084BE49
 REQUIRED = (0x0084BE35, 0x0084BE40)
@@ -42,6 +44,32 @@ def read_window(asm_dir: Path, start: int = DEFAULT_START,
     return [(pc, *results[pc]) for pc in sorted(results)]
 
 
+def read_pe_window(exe: Path, start: int = DEFAULT_START,
+                   end: int = DEFAULT_END) -> list[tuple[int, str, str]]:
+    """Use verified private PE32 input when the Ghidra listing is incomplete."""
+    if not exe.is_file():
+        raise RuntimeError(f"Private Reflex executable missing: {exe}")
+    if start > end or end - start > 0x100:
+        raise ValueError("Instruction report must cover at most 257 guest bytes")
+    cmd = ["objdump", "-d", "-M", "intel", f"--start-address=0x{start:x}",
+           f"--stop-address=0x{end+1:x}", str(exe)]
+    output = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
+    instructions = {}
+    for line in output.splitlines():
+        match = OBJDUMP.match(line)
+        if match:
+            pc = int(match.group(1), 16)
+            if start <= pc <= end:
+                if pc in instructions:
+                    raise RuntimeError(f"Duplicate disassembled PC: {pc:08x}")
+                instructions[pc] = (match.group(2), (match.group(3) or "").strip()[:128])
+    missing = [pc for pc in REQUIRED if start <= pc <= end and pc not in instructions]
+    if missing:
+        raise RuntimeError("Missing required guest PCs in objdump: " +
+                           ", ".join(f"{pc:08x}" for pc in missing))
+    return [(pc, *instructions[pc]) for pc in sorted(instructions)]
+
+
 def render(window: list[tuple[int, str, str]]) -> str:
     lines = ["Reflex original type-1 loader instruction window (diagnostic only)",
              "No game asset or full source listing is included."]
@@ -55,8 +83,9 @@ def main() -> int:
                    default=Path("analysis/decompiled/MXReflex.exe/functions"))
     p.add_argument("--output", type=Path,
                    default=Path("build/logs/type1-loader-asm-window.txt"))
+    p.add_argument("--exe", type=Path, help="Verified private PE executable")
     args = p.parse_args()
-    report = render(read_window(args.asm))
+    report = render(read_pe_window(args.exe) if args.exe else read_window(args.asm))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(report)
     print(report, end="")

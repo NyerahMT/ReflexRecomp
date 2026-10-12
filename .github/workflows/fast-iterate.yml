@@ -278,7 +278,7 @@ jobs:
       - name: Inspect original type-1 loader guest instructions
         run: |
           python3 tools/inspect_reflex_loader_asm.py \
-            --asm analysis/decompiled/MXReflex.exe/functions \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
             --output build/logs/type1-loader-asm-window.txt
 
       - name: Audit cached translation opcode coverage
