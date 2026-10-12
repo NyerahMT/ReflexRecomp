@@ -15,7 +15,7 @@ spec.loader.exec_module(probe)
 
 def make_chunks(path, missing="", duplicate=""):
     path.mkdir()
-    for index, pcs in enumerate((("0084ad10", "0084ad12", "0084ad1a", "0084ae25", "0084af80", "0084b200"),
+    for index, pcs in enumerate((("0084ad10", "0084ad12", "0084ad1a", "0084ae25", "0084af80", "0084b200", "004f0170", "004f0192"),
                                  ("0084beef", "0084bf12"))):
         selected = [pc for pc in pcs if pc != missing]
         if duplicate in pcs:
@@ -36,7 +36,7 @@ def test_scoped_probe_install_and_reinstall(tmp_path):
     make_chunks(d)
     files, pcs = probe.patch_callback(d)
     assert len(files) == 2
-    assert {"0084ad10", "0084ae25", "0084af80", "0084b200", "0084beef", "0084bf12"}.issubset(pcs)
+    assert {"0084ad10", "0084ae25", "0084af80", "0084b200", "004f0170", "004f0192", "0084beef", "0084bf12"}.issubset(pcs)
     a, b = [p.read_text() for p in files]
     assert "extern __thread unsigned int" in a
     assert "extern __thread unsigned int" not in b
@@ -47,7 +47,7 @@ def test_scoped_probe_install_and_reinstall(tmp_path):
     assert [p.read_text() for p in files] == [a, b]
 
 
-@pytest.mark.parametrize("missing", ["0084ad10", "0084beef", "0084bf12"])
+@pytest.mark.parametrize("missing", ["0084ad10", "004f0170", "0084beef", "0084bf12"])
 def test_missing_site_fails_without_writes(tmp_path, missing):
     d = tmp_path / "gen"
     make_chunks(d, missing=missing)
@@ -84,3 +84,15 @@ def test_extended_window_does_not_trace_beyond_b2ff(tmp_path):
     assert "0084ae25" in pcs
     assert "0084b300" not in pcs
     assert "at 0084b300" not in file.read_text()
+
+
+def test_nested_callee_range_is_bounded(tmp_path):
+    d = tmp_path / "gen"
+    make_chunks(d)
+    file = d / "chunk_0.c"
+    file.write_text(file.read_text().replace(
+        "}\n", "    (void)c; /* 004f0300 RET */\n}\n"))
+    files, pcs = probe.patch_callback(d)
+    assert "004f0170" in pcs
+    assert "004f0300" not in pcs
+    assert "at 004f0300" not in file.read_text()

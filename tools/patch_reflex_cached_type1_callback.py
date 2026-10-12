@@ -8,6 +8,9 @@ The flag never modifies guest memory, registers or readiness state.
 Run #38203360869 confirms the original callback JNE at 0084ad8e
 branches correctly to 0084ae25. Trace the rest of the callback until
 0084b2ff instead of stopping before that taken branch.
+Fast run #38204047948 then reached original callback site 0084aed4,
+with EAX=004f0170. Instrument that candidate indirect callee's
+first 0x190 bytes to observe whether it returns normally.
 """
 from collections import Counter
 from pathlib import Path
@@ -21,9 +24,9 @@ FIRST = int("0084ad10", 16)
 LAST = int("0084b2ff", 16)
 ENTRY = "0084beef"
 RETURN = "0084bf12"
-REQUIRED = {"0084ad10", ENTRY, RETURN}
+REQUIRED = {"0084ad10", "004f0170", ENTRY, RETURN}
 PATTERN = re.compile(
-    r"(?m)^([ \t]*)(?=[^\n]*/\* (0084(?:ad|ae|af|b0|b1|b2)[0-9a-f]{2}|0084beef|0084bf12)\b)[^\n]*$"
+    r"(?m)^([ \t]*)(?=[^\n]*/\* (0084(?:ad|ae|af|b0|b1|b2)[0-9a-f]{2}|004f0[12][0-9a-f]{2}|0084beef|0084bf12)\b)[^\n]*$"
 )
 
 
@@ -38,6 +41,7 @@ def patch_callback(generated: Path) -> tuple[list[Path], list[str]]:
         text = path.read_text()
         hits = [m.group(2) for m in PATTERN.finditer(text)
                 if FIRST <= int(m.group(2), 16) <= LAST or
+                0x004f0170 <= int(m.group(2), 16) <= 0x004f02ff or
                 m.group(2) in (ENTRY, RETURN)]
         if hits or MARKER in text:
             chunks.append((path, text, hits))
@@ -83,7 +87,8 @@ def patch_callback(generated: Path) -> tuple[list[Path], list[str]]:
 {indent}    {SYMBOL} = 0u;
 {indent}}}
 ''' + m.group(0)
-            if not FIRST <= int(pc, 16) <= LAST:
+            if not (FIRST <= int(pc, 16) <= LAST or
+                    0x004f0170 <= int(pc, 16) <= 0x004f02ff):
                 return m.group(0)
             return f'''{indent}{{ /* {MARKER} at {pc} */
 {indent}    if ({SYMBOL}) {{
