@@ -135,3 +135,10 @@ def test_pinned_bink_patch_is_idempotent_and_registers_all_missing_imports():
 def test_pinned_bink_patch_rejects_unexpected_upstream_source():
     with pytest.raises(RuntimeError, match="anchor mismatch"):
         patcher.patch_source('BINK(GetRects, 8, BinkGetRects),')
+
+
+def test_bink_patch_updates_trigger_original_game_fast_iteration():
+    workflow = (ROOT / ".github" / "workflows" / "fast-iterate.yml").read_text()
+    triggers = workflow.split("  push:", 1)[1].split("\npermissions:", 1)[0]
+    assert '"tools/patch_reflex_bink.py"' in triggers
+    assert '"tests/test_bink_framebuffers.py"' in triggers
