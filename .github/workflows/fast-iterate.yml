@@ -283,6 +283,12 @@ jobs:
             --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
             --generated build/recomp/gen \
             --output build/logs/type1-loader-asm-window.txt
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --generated build/recomp/gen \
+            --start 0x0084beed --end 0x0084bf20 \
+            --sites 0084beef,0084bf12 \
+            --output build/logs/type1-callback-asm-window.txt
 
       - name: Audit cached translation opcode coverage
         run: |
