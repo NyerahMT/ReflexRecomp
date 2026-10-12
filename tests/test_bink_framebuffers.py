@@ -106,6 +106,7 @@ PINNED_SNIPPET = r'''
 #include "video_frame.h"
     uint32_t t0 = 0, paused_at = 0, count = 0, current = 1;
     if (p.paused || !p.audio || p.failed || p.audio_unavailable)
+                host_audio_play(&play);
 // Decode exactly one visible frame. Audio prefetch may already have retained
             p->have_frame = true;
             service_audio(rec, *p);
@@ -120,6 +121,13 @@ def test_pinned_bink_patch_is_idempotent_and_registers_all_missing_imports():
     assert "BINK(GetFrameBuffersInfo, 8, BinkGetFrameBuffersInfo)" in once
     assert "BINK(RegisterFrameBuffers, 8, BinkRegisterFrameBuffers)" in once
     assert "BINK(SetSoundOnOff, 8, BinkSetSoundOnOff)" in once
+    assert "BINK(SetVolume, 12, BinkSetVolume)" in once
+    assert "BINK(ShouldSkip, 4, BinkShouldSkip)" in once
+    assert "BINK(Goto, 12, BinkGoto)" in once
+    assert "host_audio_set_volume(p->channel, p->volume_mb)" in once
+    assert "av_seek_frame(p->input, p->video_index, pts," in once
+    assert "p->frame->best_effort_timestamp < p->seek_target_pts" in once
+    assert "p->pending.clear();" in once
     assert "reflex_copy_registered_frame" in once
     assert patcher.patch_source(once) == once
 
