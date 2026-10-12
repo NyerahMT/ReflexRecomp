@@ -49,7 +49,10 @@ def patch_callback(generated: Path) -> tuple[list[Path], list[str]]:
         if installed:
             if source.count("/* " + MARKER + " at ") != len(hits):
                 raise RuntimeError(f"Partial callback PC instrumentation in {path.name}")
-            if source.count(SYMBOL + ";") + source.count(SYMBOL + " = 0u;") != 1:
+            declaration = ("__thread unsigned int " + SYMBOL + " = 0u;"
+                           if path == definition else
+                           "extern __thread unsigned int " + SYMBOL + ";")
+            if source.count(declaration) != 1:
                 raise RuntimeError(f"Partial callback trace declaration in {path.name}")
             continue
 
