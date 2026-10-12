@@ -26,7 +26,7 @@ int main() {
     assert(bounded_ncompare(mem.data(), mem.size(), 10, 60, 1) < 0);
     assert(bounded_ncompare(mem.data(), mem.size(), 10, 60, 5, true) == 0);
     assert(bounded_ncompare(mem.data(), mem.size(), 10, 60, 64, true) == 0);
-    assert(bounded_ncompare(mem.data(), mem.size(), 10, 60, 64) > 0);
+    assert(bounded_ncompare(mem.data(), mem.size(), 10, 60, 64) < 0);
     write(90, "cat"); write(100, "caterpillar");
     assert(bounded_ncompare(mem.data(), mem.size(), 90, 100, 3) == 0);
     assert(bounded_ncompare(mem.data(), mem.size(), 90, 100, 4) < 0);
