@@ -97,3 +97,24 @@ def test_generated_jump_duplicate_fails(tmp_path):
                                     "z(); /* 0084be40 MOV */\n")
     with pytest.raises(RuntimeError, match="Missing/duplicate"):
         probe.inspect_generated_jump(d)
+
+
+def test_callback_quoted_guest_sites(tmp_path):
+    d = tmp_path / "gen"
+    d.mkdir()
+    (d / "chunk_085.c").write_text(
+        "CALL(c, 0x84ad10u); /* 0084beef CALL */\n"
+        "c->r[0] = 1; /* 0084bf12 MOV */\n"
+        "secret(); /* 0084bf16 NOP */\n"
+    )
+    result = probe.inspect_generated_jump(d, ("0084beef", "0084bf12"))
+    assert "0084beef chunk_085.c: CALL(c, 0x84ad10u);" in "\n".join(result)
+    assert "0084bf12 chunk_085.c: c->r[0] = 1;" in "\n".join(result)
+    assert "secret()" not in "\n".join(result)
+
+
+def test_invalid_sites_are_rejected(tmp_path):
+    with pytest.raises(ValueError, match="distinct"):
+        probe.inspect_generated_jump(tmp_path, ("0084beef", "0084beef"))
+    with pytest.raises(ValueError, match="lowercase"):
+        probe.inspect_generated_jump(tmp_path, ("0084BEEF",))
