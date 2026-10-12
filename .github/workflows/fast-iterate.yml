@@ -53,6 +53,7 @@ on:
       - "tools/sample_reflex_native_threads.py"
       - "tools/compare_reflex_decoder_variants.py"
       - "tools/compare_reflex_crt_strings.py"
+      - "tools/summarize_reflex_long_load.py"
       - "tools/patch_reflex_interp.py"
       - "tools/refresh_cached_function.py"
       - "tools/patch_reflex_seh.py"
@@ -630,6 +631,48 @@ jobs:
             echo "::warning::No thread sample was captured"
           # This exploratory sampling must never fake a passed guest boot
           # or hide guest ABI failures in the regular 15-second runtime gate.
+
+      # One-shot bounded long startup qualification, not normal fast CI.
+      # Never mark the menu playable from process survival alone.
+      - name: Qualify original MXTables loading through extended 14-minute run
+        if: steps.host.outcome == 'success' && github.event_name == 'push' && contains(github.event.head_commit.message, '[long-load]')
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          app="$GITHUB_WORKSPACE/build/package/ReflexRecomp/ReflexRecomp"
+          test -x "$app"
+          test -s build/logs/runtime-profile-60s.log || {
+            echo "::error::Missing 60-second decoder control"
+            exit 1
+          }
+          set +e
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            timeout --signal=TERM --kill-after=5s 840s \
+            env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
+                RECOMP_LOG=1 \
+                REFLEX_FRAME_PROBE=1 \
+                REFLEX_FFP_QUAD=1 \
+                RECOMP_WATCH_FRAME=1 \
+                SDL_AUDIODRIVER=dummy \
+                "$app" \
+            >build/logs/runtime-long-load.log 2>&1
+          rc=$?
+          set -e
+          echo "$rc" >build/logs/runtime-long-load-exit.txt
+          echo "Extended original Reflex startup exit: $rc (124=normal timeout)"
+          python3 tools/summarize_reflex_long_load.py \
+            build/logs/runtime-profile-60s.log \
+            build/logs/runtime-long-load.log \
+            --seconds 840 --output build/logs/long-load-qualification.txt
+          python3 tools/check_reflex_boot_progress.py \
+            build/logs/runtime-long-load.log \
+            >build/logs/runtime-long-load-progress.txt 2>&1 || true
+          cat build/logs/runtime-long-load-progress.txt
+          grep '\[reflex-frame\]' build/logs/runtime-long-load.log | tail -n 12 || true
+          grep -E 'SEH: unhandled|call to unknown target|unimplemented import' \
+            build/logs/runtime-long-load.log | tail -n 25 || true
+          # A loader completion must be verified from original guest checkpoints
+          # and actual menu rendering; never infer it from a green workflow.
 
       - name: Upload fast-path logs
         if: always()
