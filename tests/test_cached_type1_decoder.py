@@ -16,7 +16,7 @@ spec.loader.exec_module(decoder)
 def fixture(directory, missing="", duplicate=""):
     directory.mkdir()
     groups = (
-        ("004eefa0", "004eefa1", "004ef017", "004ef210", "004ef3ff", "004ef400", "004ef710", "004ef7ff"),
+        ("004eefa0", "004eefa1", "004ef017", "004ef210", "004ef3c1", "004ef3ff", "004ef400", "004ef52e", "004ef58a", "004ef710", "004ef73e", "004ef7ff"),
         ("004f019e",),
     )
     for i, group in enumerate(groups):
@@ -84,5 +84,38 @@ def test_instrumented_chunks_compile_as_c11(tmp_path):
     fixture(d)
     paths, _ = decoder.patch_inner_decoder(d)
     for path in paths:
+        subprocess.run(["cc", "-std=c11", "-fsyntax-only", str(path)],
+                       check=True, capture_output=True, text=True)
+
+
+
+def test_heartbeat_traces_only_six_real_guest_pcs(tmp_path):
+    d = tmp_path / "gen"
+    fixture(d)
+    paths, pcs = decoder.patch_inner_decoder(d, heartbeat=True)
+    assert set(pcs) == decoder.HEARTBEAT
+    assert len(pcs) == 6
+    original = [path.read_text() for path in paths]
+    assert all('at 004ef017' not in text for text in original)
+    assert sum(text.count(decoder.MARKER + " at ") for text in original) == 6
+    assert decoder.patch_inner_decoder(d, heartbeat=True) == (paths, pcs)
+    assert [p.read_text() for p in paths] == original
+
+
+def test_heartbeat_missing_loop_pc_fails_atomically(tmp_path):
+    d = tmp_path / "gen"
+    fixture(d, missing="004ef52e")
+    originals = [f.read_text() for f in sorted(d.glob("chunk_*.c"))]
+    with pytest.raises(RuntimeError, match="Missing or duplicate"):
+        decoder.patch_inner_decoder(d, heartbeat=True)
+    assert [f.read_text() for f in sorted(d.glob("chunk_*.c"))] == originals
+
+
+@pytest.mark.skipif(not shutil.which("cc"), reason="C compiler unavailable")
+def test_heartbeat_generated_code_compiles_as_c11(tmp_path):
+    d = tmp_path / "gen"
+    fixture(d)
+    files, _ = decoder.patch_inner_decoder(d, heartbeat=True)
+    for path in files:
         subprocess.run(["cc", "-std=c11", "-fsyntax-only", str(path)],
                        check=True, capture_output=True, text=True)
