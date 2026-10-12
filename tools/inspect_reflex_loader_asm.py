@@ -74,12 +74,12 @@ def inspect_generated_jump(
     generated: Path, sites: tuple[str, ...] = ("0084be35", "0084be40")
 ) -> list[str]:
     """Emit at most one original generated-C statement per target guest PC."""
-    chunks = sorted(generated.glob("chunk_*.c"))
-    if not chunks:
-        raise RuntimeError(f"Private cached translation missing: {generated}")
     if not sites or len(sites) > 6 or len(set(sites)) != len(sites) or \
             any(not re.fullmatch(r"[0-9a-f]{8}", pc) for pc in sites):
         raise ValueError("Require one to six distinct 8-digit lowercase guest PCs")
+    chunks = sorted(generated.glob("chunk_*.c"))
+    if not chunks:
+        raise RuntimeError(f"Private cached translation missing: {generated}")
     matches = {pc: [] for pc in sites}
     for file in chunks:
         for line in file.read_text(errors="replace").splitlines():
