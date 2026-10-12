@@ -74,3 +74,26 @@ def test_objdump_private_pe_disassembly(monkeypatch, tmp_path):
     assert [x[0] for x in rows] == [0x0084be11, 0x0084be35, 0x0084be40, 0x0084be49]
     assert rows[1][1] == "call"
     assert rows[1][2] == "DWORD PTR ds:0x916334"
+
+
+def test_generated_jump_statement_bounded(tmp_path):
+    d = tmp_path / "gen"
+    d.mkdir()
+    (d / "chunk_001.c").write_text(
+        "return; /* 0084be35 JMP */\n"
+        "NEXT(); /* 0084be40 MOV */\n"
+        "secret_content_from_other_PC(); /* 0084be46 MOV */\n")
+    text = "\n".join(probe.inspect_generated_jump(d))
+    assert "0084be35 chunk_001.c: return;" in text
+    assert "0084be40 chunk_001.c: NEXT();" in text
+    assert "secret_content" not in text
+
+
+def test_generated_jump_duplicate_fails(tmp_path):
+    d = tmp_path / "gen"
+    d.mkdir()
+    (d / "chunk_000.c").write_text("x(); /* 0084be35 JMP */\n")
+    (d / "chunk_001.c").write_text("y(); /* 0084be35 JMP */\n"
+                                    "z(); /* 0084be40 MOV */\n")
+    with pytest.raises(RuntimeError, match="Missing/duplicate"):
+        probe.inspect_generated_jump(d)

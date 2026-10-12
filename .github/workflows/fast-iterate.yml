@@ -279,6 +279,7 @@ jobs:
         run: |
           python3 tools/inspect_reflex_loader_asm.py \
             --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --generated build/recomp/gen \
             --output build/logs/type1-loader-asm-window.txt
 
       - name: Audit cached translation opcode coverage
