@@ -55,3 +55,22 @@ def test_rejects_unbounded_window(tmp_path):
 def test_missing_directory(tmp_path):
     with pytest.raises(RuntimeError, match="missing"):
         probe.read_window(tmp_path / "missing")
+
+
+def test_objdump_private_pe_disassembly(monkeypatch, tmp_path):
+    binary = tmp_path / "MXReflex.exe"
+    binary.write_bytes(b"MZ")
+    class Result:
+        stdout = ("0084be11: 83 ec 04  sub esp,0x4\n"
+                  "0084be35: ff 15 34 63 91 00  call DWORD PTR ds:0x916334\n"
+                  "0084be40: 8b 44 24 04  mov eax,DWORD PTR [esp+0x4]\n"
+                  "0084be49: c3  ret\n")
+    def fake_run(cmd, **kwargs):
+        assert cmd[0] == "objdump"
+        assert cmd[-1] == str(binary)
+        return Result()
+    monkeypatch.setattr(probe.subprocess, "run", fake_run)
+    rows = probe.read_pe_window(binary)
+    assert [x[0] for x in rows] == [0x0084be11, 0x0084be35, 0x0084be40, 0x0084be49]
+    assert rows[1][1] == "call"
+    assert rows[1][2] == "DWORD PTR ds:0x916334"
