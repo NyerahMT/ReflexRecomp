@@ -13,6 +13,8 @@ on:
     paths:
       - "runtime/**"
       - "tools/patch_reflex_runtime.py"
+      - "tools/patch_reflex_bink.py"
+      - "tests/test_bink_framebuffers.py"
       - "tools/analyze_reflex_loading_worker.py"
       - "tools/patch_reflex_d3d9_shaders.py"
       - "tools/patch_reflex_d3d9_swapchain.py"
