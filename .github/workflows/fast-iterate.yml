@@ -52,6 +52,7 @@ on:
       - "tools/profile_reflex_decoder.py"
       - "tools/sample_reflex_native_threads.py"
       - "tools/compare_reflex_decoder_variants.py"
+      - "tools/compare_reflex_crt_strings.py"
       - "tools/patch_reflex_interp.py"
       - "tools/refresh_cached_function.py"
       - "tools/patch_reflex_seh.py"
@@ -546,6 +547,48 @@ jobs:
             build/logs/runtime-mesa-lp1.log \
             >build/logs/runtime-mesa-lp1-progress.txt 2>&1 || true
           cat build/logs/runtime-mesa-lp1-progress.txt
+
+      # One-time original-vs-optimized guest CRT comparison, using the same
+      # Reflex executable and normal 60-second control from [decoder-profile].
+      - name: A/B test allocation-free CRT strings against original semantics
+        if: steps.host.outcome == 'success' && github.event_name == 'push' && contains(github.event.head_commit.message, '[crt-profile]')
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          app="$GITHUB_WORKSPACE/build/package/ReflexRecomp/ReflexRecomp"
+          test -x "$app"
+          test -s build/logs/runtime-profile-60s.log || {
+            echo "::error::Missing 60-second reference control"
+            exit 1
+          }
+          set +e
+          xvfb-run -a -s "-screen 0 1280x720x24" \
+            timeout --signal=TERM --kill-after=5s 60s \
+            env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
+                RECOMP_LOG=1 \
+                REFLEX_FRAME_PROBE=1 \
+                REFLEX_FFP_QUAD=1 \
+                RECOMP_WATCH_FRAME=1 \
+                REFLEX_FAST_CRT_STRINGS=1 \
+                SDL_AUDIODRIVER=dummy \
+                "$app" \
+            >build/logs/runtime-fast-crt-60s.log 2>&1
+          rc=$?
+          set -e
+          echo "$rc" >build/logs/runtime-fast-crt-60s-exit.txt
+          echo "60-second allocation-free guest CRT exit: $rc"
+          python3 tools/compare_reflex_crt_strings.py \
+            build/logs/runtime-profile-60s.log \
+            build/logs/runtime-fast-crt-60s.log \
+            --seconds 60 --output build/logs/runtime-fast-crt-ab.txt
+          python3 tools/check_reflex_boot_progress.py \
+            build/logs/runtime-fast-crt-60s.log \
+            >build/logs/runtime-fast-crt-60s-progress.txt 2>&1 || true
+          cat build/logs/runtime-fast-crt-60s-progress.txt
+          if [[ "$rc" -ne 124 && "$rc" -ne 137 ]]; then
+            echo "::error::Optimized CRT guest exited unexpectedly ($rc)"
+            exit 1
+          fi
 
       # One-time read-only CPU/wchan observation of real native threads.
       # The game binary, assets and resource readiness are unchanged.
