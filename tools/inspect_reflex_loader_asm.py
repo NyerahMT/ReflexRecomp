@@ -70,6 +70,27 @@ def read_pe_window(exe: Path, start: int = DEFAULT_START,
     return [(pc, *instructions[pc]) for pc in sorted(instructions)]
 
 
+def inspect_generated_jump(generated: Path) -> list[str]:
+    """Emit at most one original generated-C statement per target guest PC."""
+    chunks = sorted(generated.glob("chunk_*.c"))
+    if not chunks:
+        raise RuntimeError(f"Private cached translation missing: {generated}")
+    matches = {"0084be35": [], "0084be40": []}
+    for file in chunks:
+        for line in file.read_text(errors="replace").splitlines():
+            for pc in matches:
+                if re.search(r"/\* " + pc + r"\b", line):
+                    matches[pc].append((file.name, line.strip()[:300]))
+    if any(len(v) != 1 for v in matches.values()):
+        raise RuntimeError("Missing/duplicate generated JMP sites: " +
+                           str({pc: len(v) for pc, v in matches.items()}))
+    lines = ["Generated-C exact instruction statements (no full game source):"]
+    for pc in matches:
+        chunk, statement = matches[pc][0]
+        lines.append(f"{pc} {chunk}: {statement}")
+    return lines
+
+
 def render(window: list[tuple[int, str, str]]) -> str:
     lines = ["Reflex original type-1 loader instruction window (diagnostic only)",
              "No game asset or full source listing is included."]
@@ -84,8 +105,11 @@ def main() -> int:
     p.add_argument("--output", type=Path,
                    default=Path("build/logs/type1-loader-asm-window.txt"))
     p.add_argument("--exe", type=Path, help="Verified private PE executable")
+    p.add_argument("--generated", type=Path, help="Private generated-C chunks")
     args = p.parse_args()
     report = render(read_pe_window(args.exe) if args.exe else read_window(args.asm))
+    if args.generated:
+        report += "\n".join(inspect_generated_jump(args.generated)) + "\n"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(report)
     print(report, end="")
