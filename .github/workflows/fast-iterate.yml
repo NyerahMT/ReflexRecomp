@@ -36,6 +36,7 @@ on:
       - "tools/patch_reflex_cached_resource_type1.py"
       - "tools/patch_reflex_cached_type1_body.py"
       - "tools/patch_reflex_cached_type1_gap.py"
+      - "tools/inspect_reflex_loader_asm.py"
       - "tools/patch_reflex_cached_ui_lookup.py"
       - "tools/patch_reflex_cached_ui_boolean.py"
       - "tools/patch_reflex_cached_ui_consumer.py"
@@ -274,6 +275,12 @@ jobs:
 
       # Record *all* still-untranslated opcodes for preventative fixes.
       # This is diagnostic only; an unreachable trap is not a boot failure.
+      - name: Inspect original type-1 loader guest instructions
+        run: |
+          python3 tools/inspect_reflex_loader_asm.py \
+            --asm analysis/decompiled/MXReflex.exe/functions \
+            --output build/logs/type1-loader-asm-window.txt
+
       - name: Audit cached translation opcode coverage
         run: |
           python3 tools/audit_translation_traps.py \
