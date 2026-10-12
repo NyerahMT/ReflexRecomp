@@ -70,19 +70,24 @@ def read_pe_window(exe: Path, start: int = DEFAULT_START,
     return [(pc, *instructions[pc]) for pc in sorted(instructions)]
 
 
-def inspect_generated_jump(generated: Path) -> list[str]:
+def inspect_generated_jump(
+    generated: Path, sites: tuple[str, ...] = ("0084be35", "0084be40")
+) -> list[str]:
     """Emit at most one original generated-C statement per target guest PC."""
     chunks = sorted(generated.glob("chunk_*.c"))
     if not chunks:
         raise RuntimeError(f"Private cached translation missing: {generated}")
-    matches = {"0084be35": [], "0084be40": []}
+    if not sites or len(sites) > 6 or len(set(sites)) != len(sites) or \
+            any(not re.fullmatch(r"[0-9a-f]{8}", pc) for pc in sites):
+        raise ValueError("Require one to six distinct 8-digit lowercase guest PCs")
+    matches = {pc: [] for pc in sites}
     for file in chunks:
         for line in file.read_text(errors="replace").splitlines():
             for pc in matches:
                 if re.search(r"/\* " + pc + r"\b", line):
                     matches[pc].append((file.name, line.strip()[:300]))
     if any(len(v) != 1 for v in matches.values()):
-        raise RuntimeError("Missing/duplicate generated JMP sites: " +
+        raise RuntimeError("Missing/duplicate generated guest sites: " +
                            str({pc: len(v) for pc, v in matches.items()}))
     lines = ["Generated-C exact instruction statements (no full game source):"]
     for pc in matches:
@@ -106,10 +111,19 @@ def main() -> int:
                    default=Path("build/logs/type1-loader-asm-window.txt"))
     p.add_argument("--exe", type=Path, help="Verified private PE executable")
     p.add_argument("--generated", type=Path, help="Private generated-C chunks")
+    p.add_argument("--start", type=lambda value: int(value, 0), default=DEFAULT_START)
+    p.add_argument("--end", type=lambda value: int(value, 0), default=DEFAULT_END)
+    p.add_argument("--sites", default="0084be35,0084be40",
+                   help="Comma-separated generated guest PCs (maximum 6)")
     args = p.parse_args()
-    report = render(read_pe_window(args.exe) if args.exe else read_window(args.asm))
+    sites = tuple(args.sites.split(","))
+    if not sites or len(sites) > 6 or len(set(sites)) != len(sites) or \
+            any(not re.fullmatch(r"[0-9a-f]{8}", pc) for pc in sites):
+        raise ValueError("Require one to six distinct 8-digit lowercase guest PCs")
+    report = render(read_pe_window(args.exe, args.start, args.end)
+                    if args.exe else read_window(args.asm, args.start, args.end))
     if args.generated:
-        report += "\n".join(inspect_generated_jump(args.generated)) + "\n"
+        report += "\n".join(inspect_generated_jump(args.generated, sites)) + "\n"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(report)
     print(report, end="")
