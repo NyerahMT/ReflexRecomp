@@ -237,6 +237,23 @@ void crt_strlen(X86 *c) {
     set_eax(c, static_cast<uint32_t>(length));
 }
 
+void crt_strncmp(X86 *c) {
+    const int rc = reflex_crt_fast::bounded_ncompare(
+        g_mem, GUEST_SIZE, arg(c, 0), arg(c, 1), arg(c, 2));
+    set_eax(c, static_cast<uint32_t>(static_cast<int32_t>(rc)));
+}
+
+void crt_strnicmp(X86 *c) {
+    const int rc = reflex_crt_fast::bounded_ncompare(
+        g_mem, GUEST_SIZE, arg(c, 0), arg(c, 1), arg(c, 2), true);
+    set_eax(c, static_cast<uint32_t>(static_cast<int32_t>(rc)));
+}
+
+void crt_strrchr(X86 *c) {
+    set_eax(c, reflex_crt_fast::bounded_strrchr(
+        g_mem, GUEST_SIZE, arg(c, 0), static_cast<uint8_t>(arg(c, 1))));
+}
+
 void crt_strstr(X86 *c) {
     const uint32_t hay_ptr = arg(c, 0);
     const uint32_t needle_ptr = arg(c, 1);
@@ -1570,6 +1587,32 @@ uint32_t fmod_opaque(uint32_t &slot) {
     return slot;
 }
 
+// FMOD Ex get3DSettings returns the three float values most recently set.
+// Preserve guest IEEE-754 bit patterns instead of fabricating output data.
+std::mutex g_fmod_3d_mutex;
+uint32_t g_fmod_3d_bits[3] = {0x3f800000u, 0x3f800000u, 0x3f800000u};
+
+void fmod_system_set_3d_settings(X86 *c) {
+    std::lock_guard<std::mutex> lock(g_fmod_3d_mutex);
+    for (uint32_t i = 0; i < 3; ++i)
+        g_fmod_3d_bits[i] = arg(c, i + 1u);
+    set_eax(c, 0);
+}
+
+void fmod_system_get_3d_settings(X86 *c) {
+    const uint32_t outputs[3] = {arg(c, 1), arg(c, 2), arg(c, 3)};
+    for (const uint32_t ptr : outputs) {
+        if (ptr && !gm_valid(ptr, 4)) {
+            set_eax(c, 1); // Invalid output: fail without partial writes.
+            return;
+        }
+    }
+    std::lock_guard<std::mutex> lock(g_fmod_3d_mutex);
+    for (uint32_t i = 0; i < 3; ++i)
+        if (outputs[i]) wr32(outputs[i], g_fmod_3d_bits[i]);
+    set_eax(c, 0);
+}
+
 void fmod_system_get_version(X86 *c) {
     const uint32_t out = arg(c, 1); // __stdcall member: [this, version*]
     if (!out || !gm_valid(out, 4)) {
@@ -2115,6 +2158,14 @@ void crt_swprintf_s(X86 *c) {
     set_eax(c, static_cast<uint32_t>(written));
 }
 
+// MSVCR90 _vswprintf_c_l(dst, count, fmt, locale, va_list).
+// The guest formatter is UTF-16LE, bounded, and independent of host wchar_t.
+void crt_vswprintf_c_l(X86 *c) {
+    const int written = reflex_crt::guest_swprintf_s(
+        g_mem, GUEST_SIZE, arg(c, 0), arg(c, 1), arg(c, 2), arg(c, 4));
+    set_eax(c, static_cast<uint32_t>(written));
+}
+
 void crt_wcsncpy(X86 *c) {
     const uint32_t dst = arg(c, 0);
     const uint32_t src = arg(c, 1);
@@ -2629,6 +2680,7 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "mbstowcs_s", ARGC_CDECL, crt_mbstowcs_s},
     {"MSVCR90.dll", "wcsncpy", ARGC_CDECL, crt_wcsncpy},
     {"MSVCR90.dll", "swprintf_s", ARGC_CDECL, crt_swprintf_s},
+    {"MSVCR90.dll", "_vswprintf_c_l", ARGC_CDECL, crt_vswprintf_c_l},
     {"MSVCR90.dll", "wcsrchr", ARGC_CDECL, crt_wcsrchr},
     {"MSVCR90.dll", "wcspbrk", ARGC_CDECL, crt_wcspbrk},
     {"MSVCR90.dll", "_CRT_RTC_INITW", ARGC_CDECL, crt_rtc_initw},
@@ -2644,6 +2696,9 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "strncpy", ARGC_CDECL, crt_strncpy},
     {"MSVCR90.dll", "_stricmp", ARGC_CDECL, crt_stricmp},
     {"MSVCR90.dll", "strcmp", ARGC_CDECL, crt_strcmp},
+    {"MSVCR90.dll", "strncmp", ARGC_CDECL, crt_strncmp},
+    {"MSVCR90.dll", "_strnicmp", ARGC_CDECL, crt_strnicmp},
+    {"MSVCR90.dll", "strrchr", ARGC_CDECL, crt_strrchr},
     {"MSVCR90.dll", "strlen", ARGC_CDECL, crt_strlen},
     {"MSVCR90.dll", "strstr", ARGC_CDECL, crt_strstr},
     {"MSVCR90.dll", "strncat", ARGC_CDECL, crt_strncat},
@@ -2723,7 +2778,10 @@ const ImportShim k_reflex_shims[] = {
      2, fmod_ok},
     {"fmodexL.dll",
      "?set3DSettings@System@FMOD@@QAG?AW4FMOD_RESULT@@MMM@Z",
-     4, fmod_ok},
+     4, fmod_system_set_3d_settings},
+    {"fmodexL.dll",
+     "?get3DSettings@System@FMOD@@QAG?AW4FMOD_RESULT@@PAM00@Z",
+     4, fmod_system_get_3d_settings},
     {"fmodexL.dll",
      "?getMasterChannelGroup@System@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVChannelGroup@2@@Z",
      2, fmod_system_get_master_channel_group},

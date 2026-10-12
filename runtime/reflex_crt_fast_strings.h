@@ -39,4 +39,43 @@ inline int bounded_compare(
     return lhs_size < rhs_size ? -1 : lhs_size > rhs_size ? 1 : 0;
 }
 
+
+inline int bounded_ncompare(const uint8_t *memory, uint32_t arena,
+                            uint32_t a, uint32_t b, uint32_t count,
+                            bool ascii_casefold = false) {
+    if (!count) return 0;
+    const auto get = [=](uint32_t ptr, uint64_t index) -> uint8_t {
+        const uint64_t address = static_cast<uint64_t>(ptr) + index;
+        return memory && ptr && address < arena ? memory[address] : 0;
+    };
+    // The runtime bounds individual guest strings to 1 MiB for CRT searches.
+    const uint64_t limit = std::min<uint64_t>(count, 0x100000u);
+    for (uint64_t i = 0; i < limit; ++i) {
+        uint8_t lhs = get(a, i), rhs = get(b, i);
+        if (ascii_casefold) {
+            if (lhs >= 'A' && lhs <= 'Z') lhs += 'a' - 'A';
+            if (rhs >= 'A' && rhs <= 'Z') rhs += 'a' - 'A';
+        }
+        if (lhs != rhs) return lhs < rhs ? -1 : 1;
+        if (!lhs) return 0;
+    }
+    return 0;
+}
+
+inline uint32_t bounded_strrchr(const uint8_t *memory, uint32_t arena,
+                                uint32_t ptr, uint8_t target,
+                                uint32_t max_len = 0x100000u) {
+    if (!memory || !ptr || ptr >= arena) return 0;
+    const uint32_t limit = static_cast<uint32_t>(std::min<uint64_t>(
+        max_len, static_cast<uint64_t>(arena) - ptr));
+    uint32_t last = 0;
+    for (uint32_t i = 0; i < limit; ++i) {
+        const uint8_t ch = memory[ptr + i];
+        if (ch == target) last = ptr + i;
+        if (!ch) return last; // NUL is searchable, too.
+    }
+    // Do not return an unterminated string's speculative pointer.
+    return 0;
+}
+
 } // namespace reflex_crt_fast
