@@ -3,6 +3,8 @@
 
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 KIT = ROOT / "kit"
@@ -42,6 +44,17 @@ def main() -> None:
     target = KIT / "runtime" / "reflex_compat.cpp"
     shutil.copyfile(SOURCE, target)
     stage_compat_headers(KIT / "runtime")
+    # Bink 1's externally supplied YUV plane API is required for the real
+    # Nordic intro video; keep its original FFmpeg decoder and guest buffers.
+    bink_header = ROOT / "runtime" / "reflex_bink_framebuffers.h"
+    pinned_bink = KIT / "dx" / "bink.cpp"
+    if not bink_header.is_file() or not pinned_bink.is_file():
+        raise SystemExit("missing Bink frame-buffer header or pinned decoder")
+    shutil.copyfile(bink_header, KIT / "runtime" / bink_header.name)
+    subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "patch_reflex_bink.py"), str(pinned_bink)],
+        check=True,
+    )
     # The SIMD decoder is a separately linked guest CPU helper. Both its
     # declaration and implementation must be staged into the pinned kit.
     for filename in ("reflex_crt_termination.h", "reflex_packed_sse.h", "reflex_packed_sse.cpp"):
