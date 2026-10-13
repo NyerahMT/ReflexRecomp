@@ -29,6 +29,7 @@ def test_virtual_lookup_trace_uses_c_escaped_newline(tmp_path):
         assert '[reflex-worker-null]' in generated
         assert 'trace_ret == 0x008065b9u' in generated
         assert 'trace_ret == 0x008065b9u || trace_ret == 0x008067fdu' in generated
+        assert 'trace_ret == 0x0080fc3cu' in generated
         assert 'trace_esp + 16u <= GUEST_SIZE' in generated
         assert 'p + 16u <= GUEST_SIZE' in generated
         assert 'valid ? rd32(p + 12u)' in generated
@@ -87,3 +88,5 @@ def test_post_intro_crash_asm_qualification_is_bounded():
     assert "post-intro-null-call-asm-window.txt" in workflow
     assert "--start 0x008067a0 --end 0x00806840" in workflow
     assert "fmod-next-null-call-asm-window.txt" in workflow
+    assert "--start 0x0080fbe0 --end 0x0080fc70" in workflow
+    assert "post-fmod-null-call-asm-window.txt" in workflow

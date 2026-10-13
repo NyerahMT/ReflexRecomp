@@ -347,6 +347,10 @@ jobs:
             --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
             --start 0x008067a0 --end 0x00806840 \
             --output build/logs/fmod-next-null-call-asm-window.txt
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --start 0x0080fbe0 --end 0x0080fc70 \
+            --output build/logs/post-fmod-null-call-asm-window.txt
 
       - name: Audit cached translation opcode coverage
         run: |
