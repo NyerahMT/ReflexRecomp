@@ -201,37 +201,40 @@ jobs:
             > "$RUNNER_TEMP/reflex-game/Database/MXUI.dx9.package"
           test -s "$RUNNER_TEMP/reflex-game/Database/MXUI.dx9.package"
 
-          # The full game reaches Music.dx9.package immediately before its
-          # null indirect call at guest return 0080fc3c. Do not manufacture
-          # a placeholder or silently turn a missing payload into an ABI bug.
-          # Find the exact original package in the private release archives.
-          music="$RUNNER_TEMP/reflex-game/Database/Music.dx9.package"
-          if [[ ! -s "$music" ]]; then
-            for archive in Archive.3.zip Archive.4.zip Archive.2.zip Archive.zip; do
-              src="$RUNNER_TEMP/reflex-assets/$archive"
-              if [[ ! -s "$src" ]]; then
-                gh release download "$INPUT_TAG" \
-                  --repo "$INPUT_REPO" --pattern "$archive" \
-                  --dir "$RUNNER_TEMP/reflex-assets" --clobber
-              fi
-              if python3 tools/stage_reflex_release_asset.py \
-                  --archive "$src" --name Music.dx9.package \
-                  --output "$music"; then
-                break
-              else
-                status=$?
-                if [[ "$status" -ne 3 ]]; then
-                  echo "::error::Private game archive is corrupt or contains ambiguous Music package entries"
-                  exit "$status"
+          # During original-game runs, missing original Music and
+          # CrowdSoundProjects packages immediately preceded the
+          # null indirect call at 0080fc3c (runs 158 and 159).
+          # Preserve the authentic game data: no empty stubs or fake handles.
+          # Music was located in private Archive.zip in the previous run.
+          for name in Music.dx9.package CrowdSoundProjects.dx9.package; do
+            output="$RUNNER_TEMP/reflex-game/Database/$name"
+            if [[ ! -s "$output" ]]; then
+              for archive in Archive.zip Archive.3.zip Archive.4.zip Archive.2.zip; do
+                src="$RUNNER_TEMP/reflex-assets/$archive"
+                if [[ ! -s "$src" ]]; then
+                  gh release download "$INPUT_TAG" \
+                    --repo "$INPUT_REPO" --pattern "$archive" \
+                    --dir "$RUNNER_TEMP/reflex-assets" --clobber
                 fi
-              fi
-              rm -f "$src"
-            done
-          fi
-          if [[ ! -s "$music" ]]; then
-            echo "::error::Original Database/Music.dx9.package missing from all private game archives. Upload the original file to a private game-input archive before trusting boot diagnostics."
-            exit 1
-          fi
+                if python3 tools/stage_reflex_release_asset.py \
+                    --archive "$src" --name "$name" --output "$output"; then
+                  break
+                else
+                  status=$?
+                  if [[ "$status" -ne 3 ]]; then
+                    echo "::error::Private game archive is corrupt or has ambiguous entries for $name"
+                    exit "$status"
+                  fi
+                fi
+              done
+            fi
+            if [[ ! -s "$output" ]]; then
+              echo "::error::Original Database/$name missing from all private archives. Supply the original file, not a placeholder."
+              exit 1
+            fi
+          done
+          # Only extract the referenced originals; clean up the compressed
+          # private archives to avoid disk exhaustion during compilation.
           rm -f "$RUNNER_TEMP/reflex-assets/Archive.3.zip" \
                 "$RUNNER_TEMP/reflex-assets/Archive.4.zip" \
                 "$RUNNER_TEMP/reflex-assets/Archive.2.zip" \
