@@ -81,3 +81,33 @@ def test_new_imports_use_correct_guest_abi_and_initialized_fmod_outputs():
     assert 'g_fmod_3d_bits[i] = arg(c, i + 1u)' in code
     assert 'wr32(outputs[i], g_fmod_3d_bits[i])' in code
     assert 'arg(c, 2), arg(c, 4)' in code
+
+
+def test_fmod_event_system_load_slot_nine_has_valid_abi_and_no_fake_success():
+    """The original worker at 008065b7 calls the previously absent vtable slot 9.
+
+    The FMOD bank loader must be a callable 4-argument stdcall shim, and
+    until real FEV decoding exists it must clear its project and fail,
+    rather than advertise success with an invalid audio project.
+    """
+    code = (ROOT / "runtime" / "reflex_compat.cpp").read_text()
+    assert "void fmod_event_system_load(X86 *c)" in code
+    assert "const uint32_t filename = arg(c, 1);" in code
+    assert "const uint32_t info = arg(c, 2);" in code
+    assert "const uint32_t out = arg(c, 3);" in code
+    assert "if (!out || !gm_valid(out, 4))" in code
+    assert "wr32(out, 0);" in code
+    assert "if (info && (!gm_valid(info, 24) || rd32(info) != 24u))" in code
+    assert "const uint32_t vt = heap_alloc(10 * 4, true, 16);" in code
+    vtable = code.split("uint32_t fmod_event_system_vtable()", 1)[1]
+    entries = vtable.split("} methods[] = {", 1)[1].split("};", 1)[0]
+    assert entries.count('{"FMOD::EventSystem::') == 10
+    assert entries.splitlines()[9].strip() == (
+        '{"FMOD::EventSystem::load", 4, fmod_event_system_load},'
+    )
+    assert "for (uint32_t i = 0; i < 10; ++i)" in vtable
+    handler = code.split("void fmod_event_system_load(X86 *c)", 1)[1].split(
+        "uint32_t fmod_event_system_vtable()", 1)[0]
+    assert "set_eax(c, 1); // Nonzero FMOD_RESULT" in handler
+    assert "set_eax(c, 0);" not in handler
+    assert "return;" in handler
