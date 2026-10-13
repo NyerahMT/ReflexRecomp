@@ -71,3 +71,33 @@ def test_fail_closed_when_disassembly_is_missing(tmp_path):
     import pytest
     with pytest.raises(RuntimeError, match="disassembly missing"):
         mod.patch_cache(gen, asm)
+
+
+def test_bulk_patch_covers_three_reciprocal_families(tmp_path):
+    gen = tmp_path / "gen"
+    asm = tmp_path / "asm"
+    gen.mkdir()
+    asm.mkdir()
+    source = (
+        "void test(X86 *c) {\n"
+        " recomp_unmodelled(c,0x00450000u); return;\n"
+        " recomp_unmodelled(c,0x00450004u); return;\n"
+        " recomp_unmodelled(c,0x00450008u); return;\n"
+        " recomp_unmodelled(c,0x0045000cu); return;\n"
+        "}\n"
+    )
+    (gen / "chunk_000.c").write_text(source)
+    (asm / "00450000.asm").write_text(
+        "00450000  RCPPS XMM0,XMM1\n"
+        "00450004  RSQRTPS XMM2,XMM3\n"
+        "00450008  RCPSS XMM1,dword ptr [ESP+4]\n"
+        "0045000C  CVTPI2PS XMM0,MM0\n"
+    )
+    counts = mod.patch_cache(gen, asm)
+    assert {name: counts[name] for name in ("RCPPS", "RSQRTPS", "RCPSS")} == {
+        "RCPPS": 1, "RSQRTPS": 1, "RCPSS": 1
+    }
+    text = (gen / "chunk_000.c").read_text()
+    assert text.count("reflex_packed_sse(c, ") == 3
+    assert "recomp_unmodelled(c,0x0045000cu)" in text
+    assert all(count == 0 for count in mod.patch_cache(gen, asm).values())
