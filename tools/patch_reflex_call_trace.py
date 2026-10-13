@@ -23,6 +23,37 @@ def main():
     trace = ANCHOR + """    const uint32_t trace_esp = c->r[R_ESP];
     const uint32_t trace_ret = rd32(trace_esp);
 
+    // Observe the first post-loader null indirect call in the original
+    // engine-audio worker. Read-only tracing; never skip a guest call.
+    if (trace_ret == 0x008065b9u) {
+        const int stack_ok = trace_esp >= 0x10000u &&
+            (uint64_t)trace_esp + 16u <= GUEST_SIZE;
+        fprintf(stderr,
+                "[reflex-worker-null] ret=%08x target=%08x esp=%08x "
+                "eax=%08x ebx=%08x ecx=%08x edx=%08x esi=%08x edi=%08x "
+                "arg0=%08x arg1=%08x arg2=%08x\\n",
+                trace_ret, target, trace_esp,
+                c->r[R_EAX], c->r[R_EBX], c->r[R_ECX], c->r[R_EDX],
+                c->r[R_ESI], c->r[R_EDI],
+                stack_ok ? rd32(trace_esp + 4u) : 0xffffffffu,
+                stack_ok ? rd32(trace_esp + 8u) : 0xffffffffu,
+                stack_ok ? rd32(trace_esp + 12u) : 0xffffffffu);
+        const int reg_ids[] = {R_EAX, R_EBX, R_ECX, R_EDX, R_ESI, R_EDI};
+        const char *reg_names[] = {"eax", "ebx", "ecx", "edx", "esi", "edi"};
+        for (int i = 0; i < 6; ++i) {
+            const uint32_t p = c->r[reg_ids[i]];
+            const int valid = p >= 0x10000u && (uint64_t)p + 16u <= GUEST_SIZE;
+            fprintf(stderr,
+                    "[reflex-worker-null] reg=%s ptr=%08x valid=%d "
+                    "w0=%08x w1=%08x w2=%08x w3=%08x\\n",
+                    reg_names[i], p, valid,
+                    valid ? rd32(p) : 0xffffffffu,
+                    valid ? rd32(p + 4u) : 0xffffffffu,
+                    valid ? rd32(p + 8u) : 0xffffffffu,
+                    valid ? rd32(p + 12u) : 0xffffffffu);
+        }
+    }
+
     // reflex-finalizer-vcall-v1: distinguish the two indirect resource
     // finalizer lookups from the early exits in original 00543cd0.
     // 00543d68: resource availability query; 00543d86: resource-load call.
