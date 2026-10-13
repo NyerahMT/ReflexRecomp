@@ -101,3 +101,28 @@ def test_bulk_patch_covers_three_reciprocal_families(tmp_path):
     assert text.count("reflex_packed_sse(c, ") == 3
     assert "recomp_unmodelled(c,0x0045000cu)" in text
     assert all(count == 0 for count in mod.patch_cache(gen, asm).values())
+
+
+def test_bulk_patch_selects_six_sse2_integer_conversion_sites(tmp_path):
+    gen = tmp_path / "gen"
+    asm = tmp_path / "asm"
+    gen.mkdir()
+    asm.mkdir()
+    addresses = [0x0042c262, 0x0042c266, 0x0042c26a,
+                 0x0042c3bb, 0x0042c3bf, 0x0042c3c3]
+    names = ["PCMPGTD", "CVTPS2DQ", "CVTDQ2PS"] * 2
+    (gen / "chunk_005.c").write_text(
+        "void test(X86 *c) {\n"
+        + "".join(f"recomp_unmodelled(c,0x{pc:08x}u);return;\n" for pc in addresses)
+        + "}\n"
+    )
+    (asm / "0042c000.asm").write_text("".join(
+        f"{pc:08X}  {name} XMM0,XMM1\n"
+        for pc, name in zip(addresses, names)
+    ))
+    count = mod.patch_cache(gen, asm)
+    assert {name: count[name] for name in set(names)} == {
+        "PCMPGTD": 2, "CVTPS2DQ": 2, "CVTDQ2PS": 2
+    }
+    assert (gen / "chunk_005.c").read_text().count("reflex_packed_sse(c,") == 6
+    assert all(x == 0 for x in mod.patch_cache(gen, asm).values())
