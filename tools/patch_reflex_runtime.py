@@ -12,13 +12,15 @@ SOURCE = ROOT / "runtime" / "reflex_compat.cpp"
 NUMERIC_HEADER = ROOT / "runtime" / "reflex_crt_numeric.h"
 WIDE_FORMAT_HEADER = ROOT / "runtime" / "reflex_crt_wide_format.h"
 FAST_STRINGS_HEADER = ROOT / "runtime" / "reflex_crt_fast_strings.h"
+D3DX_HALF_HEADER = ROOT / "runtime" / "reflex_d3dx_float16.h"
 
 
 def stage_compat_headers(destination: Path, numeric: Path = NUMERIC_HEADER,
                          wide_format: Path = WIDE_FORMAT_HEADER,
-                         fast_strings: Path = FAST_STRINGS_HEADER) -> None:
+                         fast_strings: Path = FAST_STRINGS_HEADER,
+                         d3dx_half: Path = D3DX_HALF_HEADER) -> None:
     # Validate all headers before writing any staged runtime file.
-    headers = (numeric, wide_format, fast_strings)
+    headers = (numeric, wide_format, fast_strings, d3dx_half)
     for header in headers:
         if not header.is_file():
             raise SystemExit(f"missing {header}")
