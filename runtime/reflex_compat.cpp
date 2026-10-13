@@ -1625,6 +1625,56 @@ void fmod_system_get_version(X86 *c) {
     set_eax(c, 0);
 }
 
+// Microsoft FMOD Ex System::createSound is a five-word guest stdcall:
+// (this, name_or_data, FMOD_MODE, FMOD_CREATESOUNDEXINFO*, Sound**).
+// The unimplemented-import fallback previously returned FMOD_OK without
+// populating Sound** and left ESP untouched, corrupting the next audio call.
+// Until a real FSB/FEV decoder exists, preserve ABI and signal failure.
+void fmod_system_create_sound(X86 *c) {
+    const uint32_t source = arg(c, 1);
+    const uint32_t mode = arg(c, 2);
+    const uint32_t exinfo = arg(c, 3);
+    const uint32_t out = arg(c, 4);
+    if (!out || !gm_valid(out, 4)) {
+        set_eax(c, 1);
+        return;
+    }
+    wr32(out, 0);
+    static unsigned long long calls = 0;
+    const unsigned long long n =
+        __atomic_add_fetch(&calls, 1ULL, __ATOMIC_RELAXED);
+    if (n <= 16 || (n & (n - 1)) == 0) {
+        fprintf(stderr,
+                "[reflex-fmod] System::createSound call=%llu source=%08x "
+                "mode=%08x exinfo=%08x sound_out=%08x unsupported\n",
+                n, source, mode, exinfo, out);
+    }
+    set_eax(c, 1);
+}
+
+// FMOD Ex Sound::getNumSubSounds(this, int*) has two guest stack words.
+// Clearing a valid count prevents callers from using uninitialized data;
+// returning an error makes unsupported audio resources explicit.
+void fmod_sound_get_num_sub_sounds(X86 *c) {
+    const uint32_t sound = arg(c, 0);
+    const uint32_t count_out = arg(c, 1);
+    if (!count_out || !gm_valid(count_out, 4)) {
+        set_eax(c, 1);
+        return;
+    }
+    wr32(count_out, 0);
+    static unsigned long long calls = 0;
+    const unsigned long long n =
+        __atomic_add_fetch(&calls, 1ULL, __ATOMIC_RELAXED);
+    if (n <= 16 || (n & (n - 1)) == 0) {
+        fprintf(stderr,
+                "[reflex-fmod] Sound::getNumSubSounds call=%llu this=%08x "
+                "count_out=%08x unsupported\n",
+                n, sound, count_out);
+    }
+    set_eax(c, 1);
+}
+
 void fmod_system_get_master_channel_group(X86 *c) {
     const uint32_t out = arg(c, 1);
     const uint32_t group = fmod_opaque(g_fmod_channel_group);
@@ -2828,6 +2878,12 @@ const ImportShim k_reflex_shims[] = {
     {"fmodexL.dll",
      "?getVersion@System@FMOD@@QAG?AW4FMOD_RESULT@@PAI@Z",
      2, fmod_system_get_version},
+    {"fmodexL.dll",
+     "?createSound@System@FMOD@@QAG?AW4FMOD_RESULT@@PBDIPAUFMOD_CREATESOUNDEXINFO@@PAPAVSound@2@@Z",
+     5, fmod_system_create_sound},
+    {"fmodexL.dll",
+     "?getNumSubSounds@Sound@FMOD@@QAG?AW4FMOD_RESULT@@PAH@Z",
+     2, fmod_sound_get_num_sub_sounds},
 
     // MSVC thiscall: ECX carries this; one explicit constructor argument is
     // callee-cleaned, while the destructor has no stack arguments.

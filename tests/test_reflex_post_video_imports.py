@@ -111,3 +111,36 @@ def test_fmod_event_system_load_slot_nine_has_valid_abi_and_no_fake_success():
     assert "set_eax(c, 1); // Nonzero FMOD_RESULT" in handler
     assert "set_eax(c, 0);" not in handler
     assert "return;" in handler
+
+
+def test_fmod_sound_imports_do_not_return_false_success_or_leak_stack_words():
+    """The 2026-10-13 original-game run reached both unsupported FMOD imports."""
+    code = (ROOT / "runtime" / "reflex_compat.cpp").read_text()
+    create_symbol = '"?createSound@System@FMOD@@QAG?AW4FMOD_RESULT@@PBDIPAUFMOD_CREATESOUNDEXINFO@@PAPAVSound@2@@Z"'
+    count_symbol = '"?getNumSubSounds@Sound@FMOD@@QAG?AW4FMOD_RESULT@@PAH@Z"'
+    assert create_symbol in code
+    assert count_symbol in code
+    assert '5, fmod_system_create_sound}' in code
+    assert '2, fmod_sound_get_num_sub_sounds}' in code
+
+    create = code.split("void fmod_system_create_sound(X86 *c)", 1)[1].split(
+        "void fmod_sound_get_num_sub_sounds(X86 *c)", 1)[0]
+    assert "arg(c, 1)" in create
+    assert "arg(c, 2)" in create
+    assert "arg(c, 3)" in create
+    assert "arg(c, 4)" in create
+    assert "if (!out || !gm_valid(out, 4))" in create
+    assert "wr32(out, 0);" in create
+    assert "set_eax(c, 1);" in create
+    assert "set_eax(c, 0);" not in create
+    assert r'unsupported\n"' in create
+
+    count = code.split("void fmod_sound_get_num_sub_sounds(X86 *c)", 1)[1].split(
+        "void fmod_system_get_master_channel_group(X86 *c)", 1)[0]
+    assert "arg(c, 0)" in count
+    assert "arg(c, 1)" in count
+    assert "if (!count_out || !gm_valid(count_out, 4))" in count
+    assert "wr32(count_out, 0);" in count
+    assert "set_eax(c, 1);" in count
+    assert "set_eax(c, 0);" not in count
+    assert r'unsupported\n"' in count

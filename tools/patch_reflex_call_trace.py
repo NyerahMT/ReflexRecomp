@@ -23,9 +23,8 @@ def main():
     trace = ANCHOR + """    const uint32_t trace_esp = c->r[R_ESP];
     const uint32_t trace_ret = rd32(trace_esp);
 
-    // Observe the first post-loader null indirect call in the original
-    // engine-audio worker. Read-only tracing; never skip a guest call.
-    if (trace_ret == 0x008065b9u) {
+    // Observe post-loader indirect calls in the FMOD audio worker. Read-only tracing; never skip a guest call.
+    if (trace_ret == 0x008065b9u || trace_ret == 0x008067fdu) {
         const int stack_ok = trace_esp >= 0x10000u &&
             (uint64_t)trace_esp + 16u <= GUEST_SIZE;
         fprintf(stderr,
