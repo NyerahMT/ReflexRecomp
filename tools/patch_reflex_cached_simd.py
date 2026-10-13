@@ -4,7 +4,7 @@
 The decoder covers common packed arithmetic, min/max, conversions and
 SSE comparison predicates. Ghidra's private disassembly selects each site;
 the runtime bridge independently checks the original instruction encoding.
-Approximate reciprocal families, integer/MMX opcodes, MXCSR exception flags,
+Integer/MMX opcodes, MXCSR exception flags,
 and other unsupported instructions deliberately retain explicit traps.
 
 The generated chunks are private CI cache files, never committed. This patch
@@ -22,6 +22,7 @@ SUPPORTED = frozenset({
     "CMPNEQPS", "CMPLTPS", "CMPLEPS", "CMPEQPS",
     "CMPNLESS", "CMPNLESD",
     "DIVPS", "SQRTPS", "MINPS", "MAXPS",
+    "RCPPS", "RCPSS", "RSQRTPS",
 })
 TRAP = re.compile(
     r"\brecomp_unmodelled\s*\(\s*c\s*,\s*0x([0-9a-fA-F]+)u?\s*\)"

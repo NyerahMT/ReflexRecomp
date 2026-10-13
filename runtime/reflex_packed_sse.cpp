@@ -6,6 +6,10 @@
 // Unsupported prefixes, malformed instructions and inaccessible guest sources
 // retain the original trap, not a fabricated result.
 //
+// Supported fast reciprocal estimates: RCPPS (0f53), RCPSS (f3 0f53),
+// RSQRTPS (0f52). We calculate full-precision IEEE float results as a
+// permitted more-accurate approximation for ordinary finite inputs; this
+// does not reproduce MXCSR DAZ/FTZ, exception flags, or original estimate bits.
 // Initial subset: ADDPS (0f58), MULPS (0f59), SUBPS (0f5c), both XMM register
 // and modrm/SIB based memory sources in 32-bit address mode. No MXCSR flags,
 // DAZ or FTZ emulation yet; this path uses IEEE float arithmetic on the host.
@@ -141,14 +145,17 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
     const bool packed_arithmetic =
         prefix == 0 && (opcode == 0x58 || opcode == 0x59 ||
                         opcode == 0x5c || opcode == 0x5e ||
-                        opcode == 0x51 || opcode == 0x5d || opcode == 0x5f);
+                        opcode == 0x51 || opcode == 0x52 || opcode == 0x53 ||
+                        opcode == 0x5d || opcode == 0x5f);
+    const bool scalar_reciprocal = prefix == 0xf3 && opcode == 0x53;
     const bool convert_ps_pd = prefix == 0 && opcode == 0x5a;
     const bool convert_pd_ps = prefix == 0x66 && opcode == 0x5a;
     const bool compare_packed = prefix == 0 && opcode == 0xc2;
     const bool compare_scalar_ss = prefix == 0xf3 && opcode == 0xc2;
     const bool compare_scalar_sd = prefix == 0xf2 && opcode == 0xc2;
 
-    if (!packed_arithmetic && !convert_ps_pd && !convert_pd_ps &&
+    if (!packed_arithmetic && !scalar_reciprocal &&
+        !convert_ps_pd && !convert_pd_ps &&
         !compare_packed && !compare_scalar_ss && !compare_scalar_sd) {
         std::fprintf(stderr, "[reflex-simd] unsupported opcode at %08x prefix=%02x op=%02x\n",
                      guest_pc, prefix, opcode);
@@ -160,7 +167,7 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
     // particular, CVTPS2PD reads only 64 bits from m64 and CMPSS only m32;
     // validating 16 bytes here would reject legal near-boundary operands.
     const uint32_t source_bytes = convert_ps_pd ? 8u :
-                                  compare_scalar_ss ? 4u :
+                                  (scalar_reciprocal || compare_scalar_ss) ? 4u :
                                   compare_scalar_sd ? 8u : 16u;
     const unsigned dest = (modrm >> 3) & 7u;
     uint32_t source = 0;
@@ -200,6 +207,9 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
         store_f32(result[0], static_cast<float>(lane_f64(&rhs[0])));
         store_f32(result[1], static_cast<float>(lane_f64(&rhs[2])));
         result[2] = result[3] = 0;
+    } else if (scalar_reciprocal) {
+        // RCPSS only updates lane 0 and leaves upper three XMM lanes intact.
+        store_f32(result[0], 1.0f / lane_f32(rhs[0]));
     } else if (compare_scalar_sd) {
         const bool pass = cmp_predicate(lane_f64(lhs), lane_f64(rhs), predicate);
         result[0] = result[1] = pass ? 0xffffffffu : 0u;
@@ -219,6 +229,8 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
             case 0x5c: store_f32(result[n], a - b); break; // SUBPS
             case 0x5e: store_f32(result[n], a / b); break; // DIVPS
             case 0x51: store_f32(result[n], std::sqrt(b)); break; // SQRTPS
+            case 0x52: store_f32(result[n], 1.0f / std::sqrt(b)); break; // RSQRTPS
+            case 0x53: store_f32(result[n], 1.0f / b); break; // RCPPS
             case 0x5d: result[n] = a < b ? lhs[n] : rhs[n]; break; // MINPS
             case 0x5f: result[n] = a > b ? lhs[n] : rhs[n]; break; // MAXPS
             }
