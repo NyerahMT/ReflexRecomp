@@ -139,11 +139,11 @@ def render(report: dict) -> str:
     else:
         lines.append("- Translation audit unavailable.")
     lines += ["", "## Missing imports observed in executions", ""]
-    lines += [f"- \`{name}\`: {n} occurrence(s)"
+    lines += [f"- `{name}`: {n} occurrence(s)"
               for name, n in rt["imports"].items()] or [
                   "- None in supplied logs; other code paths remain untested."]
     lines += ["", "## Invalid guest indirect calls observed", ""]
-    lines += [f"- \`target@return={name}\`: {n} occurrence(s)"
+    lines += [f"- `target@return={name}`: {n} occurrence(s)"
               for name, n in rt["bad_calls"].items()] or [
                   "- None in supplied logs; other code paths remain untested."]
     lines += ["", "## Fixability guidance", "",
