@@ -102,7 +102,7 @@ def test_fmod_event_system_load_slot_nine_has_valid_abi_and_no_fake_success():
     vtable = code.split("uint32_t fmod_event_system_vtable()", 1)[1]
     entries = vtable.split("} methods[] = {", 1)[1].split("};", 1)[0]
     assert entries.count('{"FMOD::EventSystem::') == 10
-    assert entries.splitlines()[9].strip() == (
+    assert entries.strip().splitlines()[9].strip() == (
         '{"FMOD::EventSystem::load", 4, fmod_event_system_load},'
     )
     assert "for (uint32_t i = 0; i < 10; ++i)" in vtable
