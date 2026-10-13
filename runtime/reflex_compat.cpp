@@ -1704,8 +1704,8 @@ void fmod_event_system_load(X86 *c) {
     }
     const std::string name = gm_str(filename, 1024);
     fprintf(stderr,
-            "[reflex-fmod] EventSystem::load path=\\"%s\\" info=%08x "
-            "project_out=%08x (FEV bank decoding not implemented)\\n",
+            "[reflex-fmod] EventSystem::load path=%s info=%08x "
+            "project_out=%08x (FEV bank decoding not implemented)\n",
             name.c_str(), info, out);
     set_eax(c, 1); // Nonzero FMOD_RESULT: unsupported FEV bank load.
 }
@@ -1716,7 +1716,8 @@ uint32_t fmod_event_system_vtable() {
 
     // FMOD Designer EventSystem ABI reached by Reflex:
     //   0 init, 1 release, 2 update, 3 setMediaPath, 4 setPluginPath,
-    //   5 getVersion, 6 getInfo, 7 getSystemObject, 8 getMusicSystem,\n    //   9 load (name_or_data, FMOD_EVENT_LOADINFO*, EventProject**).
+    //   5 getVersion, 6 getInfo, 7 getSystemObject, 8 getMusicSystem,
+    //   9 load (name_or_data, FMOD_EVENT_LOADINFO*, EventProject**).
     const uint32_t vt = heap_alloc(10 * 4, true, 16);
     if (!vt)
         return 0;
@@ -1734,7 +1735,8 @@ uint32_t fmod_event_system_vtable() {
         {"FMOD::EventSystem::getVersion", 2, fmod_event_get_version},
         {"FMOD::EventSystem::getInfo", 2, fmod_fail},
         {"FMOD::EventSystem::getSystemObject", 2, fmod_event_get_system_object},
-        {"FMOD::EventSystem::getMusicSystem", 2, fmod_fail_out_ptr},\n        {"FMOD::EventSystem::load", 4, fmod_event_system_load},
+        {"FMOD::EventSystem::getMusicSystem", 2, fmod_fail_out_ptr},
+        {"FMOD::EventSystem::load", 4, fmod_event_system_load},
     };
 
     for (uint32_t i = 0; i < 10; ++i) {
