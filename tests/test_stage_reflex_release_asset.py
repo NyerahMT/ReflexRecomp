@@ -62,7 +62,8 @@ def test_workflow_requires_original_asset_before_game_launch():
     workflow = (ROOT / ".github" / "workflows" / "fast-iterate.yml").read_text()
     assert workflow.index("tools/stage_reflex_release_asset.py") < workflow.index(
         "      - name: Locate and verify private executable")
-    assert "Original Database/Music.dx9.package missing" in workflow
-    assert "--name Music.dx9.package" in workflow
+    assert "for name in Music.dx9.package CrowdSoundProjects.dx9.package; do" in workflow
+    assert "Original Database/$name missing from all private archives" in workflow
+    assert '--name "$name"' in workflow
+    assert "Archive.zip Archive.3.zip Archive.4.zip Archive.2.zip" in workflow
     assert '"$status" -ne 3' in workflow
-    assert "Archive.2.zip Archive.zip" in workflow
