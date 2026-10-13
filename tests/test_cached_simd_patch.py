@@ -98,8 +98,9 @@ def test_bulk_patch_covers_three_reciprocal_families(tmp_path):
         "RCPPS": 1, "RSQRTPS": 1, "RCPSS": 1
     }
     text = (gen / "chunk_000.c").read_text()
-    assert text.count("reflex_packed_sse(c, ") == 3
-    assert "recomp_unmodelled(c,0x0045000cu)" in text
+    assert counts["CVTPI2PS"] == 1
+    assert text.count("reflex_packed_sse(c, ") == 4
+    assert "reflex_packed_sse(c, 0x0045000cu);" in text
     assert all(count == 0 for count in mod.patch_cache(gen, asm).values())
 
 
