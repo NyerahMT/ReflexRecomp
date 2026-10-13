@@ -678,6 +678,8 @@ jobs:
             exit 1
           }
           set +e
+          # ESI=01ce86ac and [ESI+8] clears before the observed null call.
+          # Watch the four-byte guest pointer with the pinned runtime writer trace.
           xvfb-run -a -s "-screen 0 1280x720x24" \
             timeout --signal=TERM --kill-after=5s 840s \
             env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
@@ -685,6 +687,7 @@ jobs:
                 REFLEX_FRAME_PROBE=1 \
                 REFLEX_FFP_QUAD=1 \
                 RECOMP_WATCH_FRAME=1 \
+                RECOMP_WATCH=01ce86b4:4 \
                 SDL_AUDIODRIVER=dummy \
                 "$app" \
             >build/logs/runtime-long-load.log 2>&1
@@ -692,6 +695,11 @@ jobs:
           set -e
           echo "$rc" >build/logs/runtime-long-load-exit.txt
           echo "Extended original Reflex startup exit: $rc (124=normal timeout)"
+          # Capture the last actual guest writes before the invalid vcall,
+          # with native generated-function backtraces when available.
+          echo "=== Guest stream object [ESI+8] writer watch ==="
+          grep -E 'watch: 01ce86b4 |\[reflex-worker-null\] ret=0080fc3c target=00000000' \
+            build/logs/runtime-long-load.log | tail -n 80 || true
           python3 tools/summarize_reflex_long_load.py \
             build/logs/runtime-profile-60s.log \
             build/logs/runtime-long-load.log \
