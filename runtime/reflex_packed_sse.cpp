@@ -148,13 +148,17 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
                         opcode == 0x51 || opcode == 0x52 || opcode == 0x53 ||
                         opcode == 0x5d || opcode == 0x5f);
     const bool scalar_reciprocal = prefix == 0xf3 && opcode == 0x53;
+    // Register-only forms of 0f12/0f16. Memory operands name MOVLPS/MOVHPS
+    // and are deliberately not eligible for these half-register shuffles.
+    const bool half_register_move = prefix == 0 &&
+        (opcode == 0x12 || opcode == 0x16) && (modrm >> 6) == 3;
     const bool convert_ps_pd = prefix == 0 && opcode == 0x5a;
     const bool convert_pd_ps = prefix == 0x66 && opcode == 0x5a;
     const bool compare_packed = prefix == 0 && opcode == 0xc2;
     const bool compare_scalar_ss = prefix == 0xf3 && opcode == 0xc2;
     const bool compare_scalar_sd = prefix == 0xf2 && opcode == 0xc2;
 
-    if (!packed_arithmetic && !scalar_reciprocal &&
+    if (!packed_arithmetic && !scalar_reciprocal && !half_register_move &&
         !convert_ps_pd && !convert_pd_ps &&
         !compare_packed && !compare_scalar_ss && !compare_scalar_sd) {
         std::fprintf(stderr, "[reflex-simd] unsupported opcode at %08x prefix=%02x op=%02x\n",
@@ -196,7 +200,18 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
     for (unsigned n = 0; n < 4; ++n)
         lhs[n] = result[n] = c->xmm[dest][n];
 
-    if (convert_ps_pd) {
+    if (half_register_move) {
+        // MOVHLPS xmm1,xmm2: copy source high qword into destination low.
+        // MOVLHPS xmm1,xmm2: copy source low qword into destination high.
+        // Snapshotting lhs and rhs above preserves correct self-move behavior.
+        if (opcode == 0x12) {
+            result[0] = rhs[2];
+            result[1] = rhs[3];
+        } else {
+            result[2] = rhs[0];
+            result[3] = rhs[1];
+        }
+    } else if (convert_ps_pd) {
         // CVTPS2PD xmm, xmm/m64: two f32 -> two f64 (all 128 bits).
         const double a = static_cast<double>(lane_f32(rhs[0]));
         const double b = static_cast<double>(lane_f32(rhs[1]));
