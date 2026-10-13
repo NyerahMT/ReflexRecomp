@@ -223,6 +223,42 @@ int main() {
     assert(std::isinf(lane(c, 3, 2)) && !std::signbit(lane(c, 3, 2)));
     assert(lane(c, 3, 3) == 0.f);
     assert(traps == 2);
+
+    // PCMPGTD xmm0,xmm1: signed 32-bit lane ordering, including INT_MIN.
+    c.xmm[0][0] = 0x7fffffffu; c.xmm[0][1] = 0x80000000u;
+    c.xmm[0][2] = 5u; c.xmm[0][3] = 0u;
+    c.xmm[1][0] = 0u; c.xmm[1][1] = 0x7fffffffu;
+    c.xmm[1][2] = 5u; c.xmm[1][3] = 0x80000000u;
+    code(0x111e0, {0x66,0x0f,0x66,0xc1}); // PCMPGTD xmm0,xmm1
+    reflex_packed_sse(&c, 0x111e0);
+    assert(c.xmm[0][0] == 0xffffffffu && c.xmm[0][1] == 0u &&
+           c.xmm[0][2] == 0u && c.xmm[0][3] == 0xffffffffu);
+
+    // CVTDQ2PS xmm3,xmm1: signed source, four exact representable lanes.
+    c.xmm[1][0] = 0xffffffe0u; c.xmm[1][1] = 3u;
+    c.xmm[1][2] = 0x01000000u; c.xmm[1][3] = 0x80000000u;
+    code(0x111f0, {0x0f,0x5b,0xd9}); // CVTDQ2PS xmm3,xmm1
+    reflex_packed_sse(&c, 0x111f0);
+    assert(lane(c, 3, 0) == -32.f && lane(c, 3, 1) == 3.f);
+    assert(lane(c, 3, 2) == 16777216.f && lane(c, 3, 3) == -2147483648.f);
+
+    // CVTPS2DQ rounds to nearest even under the default rounding mode.
+    setlane(c, 1, 0, 1.5f); setlane(c, 1, 1, 2.5f);
+    setlane(c, 1, 2, -2.5f); setlane(c, 1, 3, std::nanf(""));
+    code(0x11200, {0x66,0x0f,0x5b,0xd1}); // CVTPS2DQ xmm2,xmm1
+    reflex_packed_sse(&c, 0x11200);
+    assert(c.xmm[2][0] == 2u && c.xmm[2][1] == 2u);
+    assert(c.xmm[2][2] == 0xfffffffeu && c.xmm[2][3] == 0x80000000u);
+
+    // Memory source form of integer comparison is also decoded and bounded.
+    const uint32_t source_dwords[] = {1u, 0u, 10u, 7u};
+    memcpy(g_mem + 0x17080, source_dwords, sizeof source_dwords);
+    c.xmm[0][0] = 2u; c.xmm[0][1] = 2u;
+    c.xmm[0][2] = 2u; c.xmm[0][3] = 2u;
+    code(0x11210, {0x66,0x0f,0x66,0x05,0x80,0x70,0x01,0x00});
+    reflex_packed_sse(&c, 0x11210);
+    assert(c.xmm[0][0] == UINT32_MAX && c.xmm[0][1] == UINT32_MAX &&
+           c.xmm[0][2] == 0 && c.xmm[0][3] == 0);
     return 0;
 }
 """
