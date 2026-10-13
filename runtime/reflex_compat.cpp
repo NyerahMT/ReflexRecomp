@@ -1760,6 +1760,47 @@ void fmod_event_system_load(X86 *c) {
     set_eax(c, 1); // Nonzero FMOD_RESULT: unsupported FEV bank load.
 }
 
+// FMOD Designer 4.x EventSystem slots beyond load() are genuine virtual
+// methods. Its preloadFSB method is slot 38 (offset 0x98), reached at the
+// original game return PC 008067fd. All entries are retained in ABI order.
+// Unsupported services fail explicitly; they never masquerade as a loaded bank.
+void fmod_event_fail_out_arg2(X86 *c) {
+    const uint32_t out = arg(c, 2);
+    if (out && gm_valid(out, 4))
+        wr32(out, 0);
+    set_eax(c, 1);
+}
+
+void fmod_event_fail_out_arg3(X86 *c) {
+    const uint32_t out = arg(c, 3);
+    if (out && gm_valid(out, 4))
+        wr32(out, 0);
+    set_eax(c, 1);
+}
+
+void fmod_event_system_preload_fsb(X86 *c) {
+    const uint32_t filename = arg(c, 1);
+    const uint32_t stream_instance = arg(c, 2);
+    const uint32_t sound = arg(c, 3);
+    static unsigned long long calls = 0;
+    const unsigned long long n =
+        __atomic_add_fetch(&calls, 1ULL, __ATOMIC_RELAXED);
+    if (n <= 16 || (n & (n - 1)) == 0) {
+        const std::string name = filename && gm_valid(filename, 1)
+            ? gm_str(filename, 256) : "<invalid>";
+        fprintf(stderr,
+                "[reflex-fmod] EventSystem::preloadFSB call=%llu bank=%s "
+                "stream=%u sound=%08x (not implemented)\n",
+                n, name.c_str(), stream_instance, sound);
+    }
+    set_eax(c, 1);
+}
+
+void fmod_event_system_unload_fsb(X86 *c) {
+    // Unloading an unregistered FSB is unsupported, not successful.
+    set_eax(c, 1);
+}
+
 uint32_t fmod_event_system_vtable() {
     if (g_fmod_event_vtable && heap_owns(g_fmod_event_vtable))
         return g_fmod_event_vtable;
@@ -1768,7 +1809,9 @@ uint32_t fmod_event_system_vtable() {
     //   0 init, 1 release, 2 update, 3 setMediaPath, 4 setPluginPath,
     //   5 getVersion, 6 getInfo, 7 getSystemObject, 8 getMusicSystem,
     //   9 load (name_or_data, FMOD_EVENT_LOADINFO*, EventProject**).
-    const uint32_t vt = heap_alloc(10 * 4, true, 16);
+    //   10-40 follow the FMOD Designer 4.x EventSystem virtual method order;
+    //   38 preloadFSB(filename, stream_instance, sound), 39 unloadFSB.
+    const uint32_t vt = heap_alloc(41 * 4, true, 16);
     if (!vt)
         return 0;
 
@@ -1787,9 +1830,40 @@ uint32_t fmod_event_system_vtable() {
         {"FMOD::EventSystem::getSystemObject", 2, fmod_event_get_system_object},
         {"FMOD::EventSystem::getMusicSystem", 2, fmod_fail_out_ptr},
         {"FMOD::EventSystem::load", 4, fmod_event_system_load},
+        {"FMOD::EventSystem::unload", 1, fmod_fail},
+        {"FMOD::EventSystem::getProject", 3, fmod_event_fail_out_arg2},
+        {"FMOD::EventSystem::getProjectByIndex", 3, fmod_event_fail_out_arg2},
+        {"FMOD::EventSystem::getNumProjects", 2, fmod_fail_out_ptr},
+        {"FMOD::EventSystem::getCategory", 3, fmod_event_fail_out_arg2},
+        {"FMOD::EventSystem::getCategoryByIndex", 3, fmod_event_fail_out_arg2},
+        {"FMOD::EventSystem::getMusicCategory", 2, fmod_fail_out_ptr},
+        {"FMOD::EventSystem::getNumCategories", 2, fmod_fail_out_ptr},
+        {"FMOD::EventSystem::getGroup", 4, fmod_event_fail_out_arg3},
+        {"FMOD::EventSystem::getEvent", 4, fmod_event_fail_out_arg3},
+        {"FMOD::EventSystem::getEventBySystemID", 4, fmod_event_fail_out_arg3},
+        {"FMOD::EventSystem::getEventByGUID", 4, fmod_event_fail_out_arg3},
+        {"FMOD::EventSystem::getEventByGUIDString", 4, fmod_event_fail_out_arg3},
+        {"FMOD::EventSystem::getNumEvents", 2, fmod_fail_out_ptr},
+        {"FMOD::EventSystem::setReverbProperties", 2, fmod_fail},
+        {"FMOD::EventSystem::getReverbProperties", 2, fmod_fail},
+        {"FMOD::EventSystem::getReverbPreset", 4, fmod_fail},
+        {"FMOD::EventSystem::getReverbPresetByIndex", 4, fmod_fail},
+        {"FMOD::EventSystem::getNumReverbPresets", 2, fmod_fail_out_ptr},
+        {"FMOD::EventSystem::createReverb", 2, fmod_fail_out_ptr},
+        {"FMOD::EventSystem::setReverbAmbientProperties", 2, fmod_fail},
+        {"FMOD::EventSystem::getReverbAmbientProperties", 2, fmod_fail},
+        {"FMOD::EventSystem::set3DNumListeners", 2, fmod_fail},
+        {"FMOD::EventSystem::get3DNumListeners", 2, fmod_fail_out_ptr},
+        {"FMOD::EventSystem::set3DListenerAttributes", 6, fmod_fail},
+        {"FMOD::EventSystem::get3DListenerAttributes", 6, fmod_fail},
+        {"FMOD::EventSystem::setUserData", 2, fmod_fail},
+        {"FMOD::EventSystem::getUserData", 2, fmod_fail_out_ptr},
+        {"FMOD::EventSystem::preloadFSB", 4, fmod_event_system_preload_fsb},
+        {"FMOD::EventSystem::unloadFSB", 3, fmod_event_system_unload_fsb},
+        {"FMOD::EventSystem::getMemoryInfo", 5, fmod_fail},
     };
 
-    for (uint32_t i = 0; i < 10; ++i) {
+    for (uint32_t i = 0; i < 41; ++i) {
         const uint32_t tramp = imports_alloc_trampoline(
             "fmod_eventL.dll", methods[i].name, methods[i].fn, methods[i].argc);
         if (!tramp) {
