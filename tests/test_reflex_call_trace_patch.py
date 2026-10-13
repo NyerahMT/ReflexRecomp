@@ -90,3 +90,19 @@ def test_post_intro_crash_asm_qualification_is_bounded():
     assert "fmod-next-null-call-asm-window.txt" in workflow
     assert "--start 0x0080fbe0 --end 0x0080fc70" in workflow
     assert "post-fmod-null-call-asm-window.txt" in workflow
+
+
+def test_guest_stream_pointer_watch_scoped_to_extended_run_only():
+    workflow = (SCRIPT.parent.parent / ".github" / "workflows" / "fast-iterate.yml").read_text()
+    marker = "      - name: Qualify original MXTables loading through extended 14-minute run"
+    assert workflow.count(marker) == 1
+    earlier, extended = workflow.split(marker, 1)
+    extended = extended.split("      # Count observed compatibility gaps", 1)[0]
+    assert "RECOMP_WATCH=01ce86b4:4" not in earlier
+    assert "RECOMP_WATCH=01ce86b4:4" in extended
+    assert "watch: 01ce86b4 " in extended
+    assert "build/logs/runtime-long-load.log" in extended
+    env_lines = [line.strip() for line in extended.splitlines()]
+    assert any("RECOMP_WATCH_FRAME=1" in line and
+               "RECOMP_WATCH=01ce86b4:4" in env_lines[i + 1]
+               for i, line in enumerate(env_lines[:-1]))
