@@ -101,3 +101,29 @@ def test_bulk_patch_covers_three_reciprocal_families(tmp_path):
     assert text.count("reflex_packed_sse(c, ") == 3
     assert "recomp_unmodelled(c,0x0045000cu)" in text
     assert all(count == 0 for count in mod.patch_cache(gen, asm).values())
+
+
+def test_bulk_patch_covers_six_half_register_shuffles(tmp_path):
+    gen = tmp_path / "gen"
+    asm = tmp_path / "asm"
+    gen.mkdir()
+    asm.mkdir()
+    addresses = [0x00860f2b, 0x00860f2e, 0x00860f5b,
+                 0x00860f93, 0x00860f99, 0x00860fbd]
+    mnemonics = ["MOVLHPS", "MOVHLPS", "MOVLHPS",
+                 "MOVLHPS", "MOVHLPS", "MOVLHPS"]
+    (gen / "chunk_086.c").write_text(
+        "void test(X86 *c) {\n"
+        + "".join(f"recomp_unmodelled(c,0x{addr:08x}u);return;\n" for addr in addresses)
+        + "}\n"
+    )
+    (asm / "00860f00.asm").write_text("".join(
+        f"{addr:08X}  {mnemonic} XMM0,XMM1\n"
+        for addr, mnemonic in zip(addresses, mnemonics)
+    ))
+    counts = mod.patch_cache(gen, asm)
+    assert counts["MOVLHPS"] == 4
+    assert counts["MOVHLPS"] == 2
+    rewritten = (gen / "chunk_086.c").read_text()
+    assert rewritten.count("reflex_packed_sse(c, ") == 6
+    assert all(n == 0 for n in mod.patch_cache(gen, asm).values())

@@ -223,6 +223,34 @@ int main() {
     assert(std::isinf(lane(c, 3, 2)) && !std::signbit(lane(c, 3, 2)));
     assert(lane(c, 3, 3) == 0.f);
     assert(traps == 2);
+
+    // Half-register moves are raw 64-bit bit copies, not float operations.
+    // Exercise different registers, self-reference, and untouched halves.
+    c.xmm[0][0] = 0x01020304u; c.xmm[0][1] = 0x11121314u;
+    c.xmm[0][2] = 0x21222324u; c.xmm[0][3] = 0x31323334u;
+    c.xmm[1][0] = 0x41424344u; c.xmm[1][1] = 0x51525354u;
+    c.xmm[1][2] = 0x61626364u; c.xmm[1][3] = 0x71727374u;
+    code(0x111e0, {0x0f,0x16,0xc1}); // MOVLHPS XMM0,XMM1
+    reflex_packed_sse(&c, 0x111e0);
+    assert(c.xmm[0][0] == 0x01020304u && c.xmm[0][1] == 0x11121314u);
+    assert(c.xmm[0][2] == 0x41424344u && c.xmm[0][3] == 0x51525354u);
+
+    code(0x111f0, {0x0f,0x12,0xc1}); // MOVHLPS XMM0,XMM1
+    reflex_packed_sse(&c, 0x111f0);
+    assert(c.xmm[0][0] == 0x61626364u && c.xmm[0][1] == 0x71727374u);
+    assert(c.xmm[0][2] == 0x41424344u && c.xmm[0][3] == 0x51525354u);
+
+    code(0x11200, {0x0f,0x12,0xc0}); // MOVHLPS XMM0,XMM0 (aliasing)
+    reflex_packed_sse(&c, 0x11200);
+    assert(c.xmm[0][0] == 0x41424344u && c.xmm[0][1] == 0x51525354u);
+    assert(c.xmm[0][2] == 0x41424344u && c.xmm[0][3] == 0x51525354u);
+
+    code(0x11210, {0x0f,0x16,0x00}); // MOVHPS memory form NOT MOVLHPS
+    reflex_packed_sse(&c, 0x11210);
+    assert(traps == 3);
+    code(0x11220, {0x0f,0x12,0x00}); // MOVLPS memory form NOT MOVHLPS
+    reflex_packed_sse(&c, 0x11220);
+    assert(traps == 4);
     return 0;
 }
 """

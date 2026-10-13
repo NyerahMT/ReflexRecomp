@@ -23,6 +23,7 @@ SUPPORTED = frozenset({
     "CMPNLESS", "CMPNLESD",
     "DIVPS", "SQRTPS", "MINPS", "MAXPS",
     "RCPPS", "RCPSS", "RSQRTPS",
+    "MOVLHPS", "MOVHLPS",
 })
 TRAP = re.compile(
     r"\brecomp_unmodelled\s*\(\s*c\s*,\s*0x([0-9a-fA-F]+)u?\s*\)"
