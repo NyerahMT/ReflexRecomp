@@ -12,6 +12,7 @@ HARNESS = r"""
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 extern "C" {
@@ -184,10 +185,44 @@ int main() {
     reflex_packed_sse(&c, 0x11190);
     assert(c.xmm[1][0] == 0x80000000u);
 
-    // Deliberately unsupported approximate reciprocal family fails explicitly.
-    code(0x111a0, {0x0f,0x53,0xca}); // RCPPS
+    // RCPPS handles all lanes, preserves signed zeros, and uses x86 ModRM.
+    setlane(c, 2, 0, 2.f); setlane(c, 2, 1, -4.f);
+    setlane(c, 2, 2, 16.f); setlane(c, 2, 3, std::numeric_limits<float>::infinity());
+    code(0x111a0, {0x0f,0x53,0xca}); // RCPPS XMM1,XMM2
     reflex_packed_sse(&c, 0x111a0);
-    assert(traps == 3);
+    const float reciprocal[] = {0.5f, -0.25f, 0.0625f, 0.f};
+    verify(c, 1, reciprocal);
+
+    // Scalar RCPSS changes only the low 32 bits of the destination.
+    setlane(c, 2, 0, 8.f);
+    c.xmm[1][1] = 0x11223344u;
+    c.xmm[1][2] = 0x55667788u;
+    c.xmm[1][3] = 0x99aabbccu;
+    code(0x111b0, {0xf3,0x0f,0x53,0xca}); // RCPSS XMM1,XMM2
+    reflex_packed_sse(&c, 0x111b0);
+    assert(lane(c, 1, 0) == 0.125f);
+    assert(c.xmm[1][1] == 0x11223344u && c.xmm[1][2] == 0x55667788u &&
+           c.xmm[1][3] == 0x99aabbccu);
+
+    // RSQRTPS reads m128 and retains the expected special-value behavior.
+    const float sqrts[] = {1.f, 4.f, 16.f, 64.f};
+    source(0x17040, sqrts);
+    code(0x111c0, {0x0f,0x52,0x1d,0x40,0x70,0x01,0x00});
+    reflex_packed_sse(&c, 0x111c0); // RSQRTPS XMM3,[0x17040]
+    const float inverse_roots[] = {1.f, 0.5f, 0.25f, 0.125f};
+    verify(c, 3, inverse_roots);
+
+    setlane(c, 2, 0, -1.f);
+    setlane(c, 2, 1, -0.f);
+    setlane(c, 2, 2, 0.f);
+    setlane(c, 2, 3, std::numeric_limits<float>::infinity());
+    code(0x111d0, {0x0f,0x52,0xda}); // RSQRTPS XMM3,XMM2
+    reflex_packed_sse(&c, 0x111d0);
+    assert(std::isnan(lane(c, 3, 0)));
+    assert(std::isinf(lane(c, 3, 1)) && std::signbit(lane(c, 3, 1)));
+    assert(std::isinf(lane(c, 3, 2)) && !std::signbit(lane(c, 3, 2)));
+    assert(lane(c, 3, 3) == 0.f);
+    assert(traps == 2);
     return 0;
 }
 """
