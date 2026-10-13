@@ -233,6 +233,29 @@ jobs:
               exit 1
             fi
           done
+          # Inventory ALL original DX9 packages and companion databases in
+          # the private input archives, not just the latest crash's filename.
+          # Stage missing originals within a bounded disk budget and emit
+          # aggregate counts (never private file data or a full asset list).
+          for archive in Archive.zip Archive.2.zip Archive.3.zip Archive.4.zip; do
+            if [[ ! -s "$RUNNER_TEMP/reflex-assets/$archive" ]]; then
+              gh release download "$INPUT_TAG" \
+                --repo "$INPUT_REPO" --pattern "$archive" \
+                --dir "$RUNNER_TEMP/reflex-assets" --clobber
+            fi
+          done
+          df -h "$RUNNER_TEMP" || true
+          python3 tools/audit_reflex_database_assets.py \
+            --archive "$RUNNER_TEMP/reflex-assets/Archive.zip" \
+            --archive "$RUNNER_TEMP/reflex-assets/Archive.2.zip" \
+            --archive "$RUNNER_TEMP/reflex-assets/Archive.3.zip" \
+            --archive "$RUNNER_TEMP/reflex-assets/Archive.4.zip" \
+            --game-root "$RUNNER_TEMP/reflex-game" \
+            --max-stage-bytes 2147483648 \
+            --reserve-bytes 4294967296 \
+            --stage --report build/logs/reflex-database-asset-inventory.json
+          df -h "$RUNNER_TEMP" || true
+
           # Only extract the referenced originals; clean up the compressed
           # private archives to avoid disk exhaustion during compilation.
           rm -f "$RUNNER_TEMP/reflex-assets/Archive.3.zip" \
