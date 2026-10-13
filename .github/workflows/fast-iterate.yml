@@ -678,6 +678,8 @@ jobs:
             exit 1
           }
           set +e
+          # ESI=01ce86ac and [ESI+8] clears before the observed null call.
+          # Watch the four-byte guest pointer with the pinned runtime writer trace.
           xvfb-run -a -s "-screen 0 1280x720x24" \
             timeout --signal=TERM --kill-after=5s 840s \
             env RECOMP_EXE="$REFLEX_GAME_ROOT/MXReflex.exe" \
@@ -685,8 +687,6 @@ jobs:
                 REFLEX_FRAME_PROBE=1 \
                 REFLEX_FFP_QUAD=1 \
                 RECOMP_WATCH_FRAME=1 \
-                # Verified guest stream object in last run: ESI=01ce86ac,
-                # and the pointer that becomes null is *(ESI+8).
                 RECOMP_WATCH=01ce86b4:4 \
                 SDL_AUDIODRIVER=dummy \
                 "$app" \
