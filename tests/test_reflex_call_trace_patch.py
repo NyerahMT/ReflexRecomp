@@ -26,6 +26,11 @@ def test_virtual_lookup_trace_uses_c_escaped_newline(tmp_path):
         patcher.main()
         generated = table.read_text()
         assert '[reflex-ui-lookup]' in generated
+        assert '[reflex-worker-null]' in generated
+        assert 'trace_ret == 0x008065b9u' in generated
+        assert 'trace_esp + 16u <= GUEST_SIZE' in generated
+        assert 'p + 16u <= GUEST_SIZE' in generated
+        assert 'valid ? rd32(p + 12u)' in generated
         assert '[reflex-queue]' in generated
         assert 'target == 0x0084c190u' in generated
         assert 'q_n <= 32 || (q_n & (q_n - 1)) == 0' in generated
@@ -73,3 +78,9 @@ def test_cached_dispatch_trace_compiles_as_c11(tmp_path):
         )
     finally:
         patcher.TABLE = saved
+
+
+def test_post_intro_crash_asm_qualification_is_bounded():
+    workflow = (SCRIPT.parent.parent / ".github" / "workflows" / "fast-iterate.yml").read_text()
+    assert "--start 0x00806560 --end 0x008065e0" in workflow
+    assert "post-intro-null-call-asm-window.txt" in workflow
