@@ -272,7 +272,9 @@ jobs:
         run: |
           python3 tools/patch_reflex_call_trace.py
           python3 tools/patch_reflex_cached_sse.py
-          python3 tools/patch_reflex_cached_simd.py
+          python3 tools/patch_reflex_cached_simd.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --expect-remaining 0
           python3 tools/patch_reflex_cached_ui_queue.py
           python3 tools/patch_reflex_cached_loading_stages.py
           python3 tools/patch_reflex_cached_first_loader.py

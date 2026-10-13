@@ -152,6 +152,9 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
     // and are deliberately not eligible for these half-register shuffles.
     const bool half_register_move = prefix == 0 &&
         (opcode == 0x12 || opcode == 0x16) && (modrm >> 6) == 3;
+    // CVTPI2PS xmm, mm/m64 (legacy MMX packed signed integers -> f32).
+    // Destination low 64 bits change, high 64 bits are preserved.
+    const bool convert_pi_ps = prefix == 0 && opcode == 0x2a;
     const bool convert_dq_ps = prefix == 0 && opcode == 0x5b;
     const bool convert_ps_dq = prefix == 0x66 && opcode == 0x5b;
     const bool cmp_greater_i32 = prefix == 0x66 && opcode == 0x66;
@@ -162,7 +165,7 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
     const bool compare_scalar_sd = prefix == 0xf2 && opcode == 0xc2;
 
     if (!packed_arithmetic && !scalar_reciprocal && !half_register_move &&
-        !convert_dq_ps && !convert_ps_dq && !cmp_greater_i32 &&
+        !convert_pi_ps && !convert_dq_ps && !convert_ps_dq && !cmp_greater_i32 &&
         !convert_ps_pd && !convert_pd_ps &&
         !compare_packed && !compare_scalar_ss && !compare_scalar_sd) {
         std::fprintf(stderr, "[reflex-simd] unsupported opcode at %08x prefix=%02x op=%02x\n",
@@ -174,7 +177,7 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
     // Memory source sizes are encoded by the instruction family. In
     // particular, CVTPS2PD reads only 64 bits from m64 and CMPSS only m32;
     // validating 16 bytes here would reject legal near-boundary operands.
-    const uint32_t source_bytes = convert_ps_pd ? 8u :
+    const uint32_t source_bytes = (convert_ps_pd || convert_pi_ps) ? 8u :
                                   (scalar_reciprocal || compare_scalar_ss) ? 4u :
                                   compare_scalar_sd ? 8u : 16u;
     const unsigned dest = (modrm >> 3) & 7u;
@@ -198,9 +201,16 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
     // Snapshot all read lanes before touching the destination. It is legal
     // for the source XMM and destination XMM to be the same register.
     uint32_t rhs[4] = {}, lhs[4] = {}, result[4] = {};
-    const unsigned words = reg ? 4u : source_bytes / 4u;
-    for (unsigned n = 0; n < words; ++n)
-        rhs[n] = reg ? c->xmm[source][n] : rd32(source + 4u * n);
+    const unsigned words = reg ? (convert_pi_ps ? 2u : 4u) : source_bytes / 4u;
+    for (unsigned n = 0; n < words; ++n) {
+        if (reg && convert_pi_ps) {
+            // ModRM register names an MMX register, not an XMM register.
+            const uint64_t mm = c->mm[source];
+            rhs[n] = static_cast<uint32_t>(mm >> (32u * n));
+        } else {
+            rhs[n] = reg ? c->xmm[source][n] : rd32(source + 4u * n);
+        }
+    }
     for (unsigned n = 0; n < 4; ++n)
         lhs[n] = result[n] = c->xmm[dest][n];
 
@@ -214,6 +224,15 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
         } else {
             result[2] = rhs[0];
             result[3] = rhs[1];
+        }
+    } else if (convert_pi_ps) {
+        // CVTPI2PS xmm, mm/m64: write only the two low f32 lanes.
+        // Signed conversion is performed on the low and high dwords of
+        // the MMX/m64 input; MMX and the upper XMM qword are unchanged.
+        for (unsigned n = 0; n < 2; ++n) {
+            int32_t signed_lane;
+            std::memcpy(&signed_lane, &rhs[n], sizeof signed_lane);
+            store_f32(result[n], static_cast<float>(signed_lane));
         }
     } else if (convert_dq_ps) {
         // CVTDQ2PS: signed 32-bit integer lanes -> float32 lanes.

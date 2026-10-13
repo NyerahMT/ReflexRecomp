@@ -98,8 +98,9 @@ def test_bulk_patch_covers_three_reciprocal_families(tmp_path):
         "RCPPS": 1, "RSQRTPS": 1, "RCPSS": 1
     }
     text = (gen / "chunk_000.c").read_text()
-    assert text.count("reflex_packed_sse(c, ") == 3
-    assert "recomp_unmodelled(c,0x0045000cu)" in text
+    assert counts["CVTPI2PS"] == 1
+    assert text.count("reflex_packed_sse(c, ") == 4
+    assert "reflex_packed_sse(c, 0x0045000cu);" in text
     assert all(count == 0 for count in mod.patch_cache(gen, asm).values())
 
 
@@ -151,3 +152,75 @@ def test_bulk_patch_selects_six_sse2_integer_conversion_sites(tmp_path):
     }
     assert (gen / "chunk_005.c").read_text().count("reflex_packed_sse(c,") == 6
     assert all(x == 0 for x in mod.patch_cache(gen, asm).values())
+
+
+def test_last_19_patches_with_exact_pe_lookup(tmp_path, monkeypatch):
+    """17 absent Ghidra PCs plus two explicitly listed MMX CVTPI2PS sites."""
+    from pathlib import Path
+    import subprocess
+
+    gen = tmp_path / "gen"
+    listing = tmp_path / "asm"
+    gen.mkdir()
+    listing.mkdir()
+    exe = tmp_path / "verified-private.exe"
+    exe.write_bytes(b"fixture, not the original game")
+
+    pd = [0x0052B547, 0x0052B550, 0x0052B56C, 0x0052B5A9,
+          0x0052B5E6, 0x0052B5F2, 0x00533629, 0x0053557C,
+          0x00565429, 0x006305FE, 0x0063075A]
+    ps = [0x00630682, 0x006306C2, 0x006306E6,
+          0x00630702, 0x00630712, 0x00630761]
+    mm = [0x0041C59B, 0x0041C5A3]
+    addresses = sorted(pd + ps + mm)
+    (listing / "known.asm").write_text("".join(
+        f"{pc:08X}  CVTPI2PS XMM0,MM1\n" for pc in mm
+    ))
+    (gen / "chunk_000.c").write_text(
+        "void sample(X86 *c) {\n" +
+        "".join(f"  recomp_unmodelled(c,0x{pc:08x}u);return;\n" for pc in addresses) +
+        "}\n"
+    )
+
+    def fake_objdump(command, **kwargs):
+        pc = int(next(x.rsplit("=", 1)[1] for x in command
+                      if x.startswith("--start-address=")), 16)
+        if pc in pd:
+            instr, name = "0f 5a c1", "cvtps2pd"
+        elif pc in ps:
+            instr, name = "66 0f 5a c1", "cvtpd2ps"
+        else:
+            raise AssertionError("Known Ghidra CVTPI2PS should not be probed")
+        return subprocess.CompletedProcess(
+            command, 0,
+            stdout=f" {pc:08x}: {instr} {name} xmm0,xmm1\n", stderr=""
+        )
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_objdump)
+    counts = mod.patch_cache(gen, listing, exe=exe, expect_remaining=0)
+    assert counts["CVTPS2PD"] == 11
+    assert counts["CVTPD2PS"] == 6
+    assert counts["CVTPI2PS"] == 2
+    assert sum(counts.values()) == 19
+    assert (gen / "chunk_000.c").read_text().count("reflex_packed_sse(c,") == 19
+    assert all(x == 0 for x in mod.patch_cache(gen, listing).values())
+
+
+def test_exact_pe_fallback_refuses_wrong_opcode_and_mnemonic(tmp_path, monkeypatch):
+    import subprocess
+    exe = tmp_path / "private.exe"
+    exe.write_bytes(b"fixture")
+
+    def fake_objdump(command, **kwargs):
+        start = int(next(x.rsplit("=", 1)[1] for x in command
+                         if x.startswith("--start-address=")), 16)
+        instr, name = ("66 0f 5a c1", "cvtps2pd") if start == 0x10000 else (
+            "0f 5a c1", "cvtpd2ps"
+        )
+        return subprocess.CompletedProcess(
+            command, 0,
+            stdout=f" {start:08x}: {instr} {name} xmm0,xmm1\n",
+            stderr=""
+        )
+    monkeypatch.setattr(mod.subprocess, "run", fake_objdump)
+    assert mod.inspect_unknown_pe(exe, {0x10000, 0x10010}) == {}

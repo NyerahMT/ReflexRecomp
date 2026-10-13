@@ -286,6 +286,29 @@ int main() {
     reflex_packed_sse(&c, 0x11210);
     assert(c.xmm[0][0] == UINT32_MAX && c.xmm[0][1] == UINT32_MAX &&
            c.xmm[0][2] == 0 && c.xmm[0][3] == 0);
+
+    // Two CVTPI2PS legacy-MMX sites are the last known instruction family.
+    // CVTPI2PS xmm0,mm1 reads two signed 32-bit MMX lanes and must preserve
+    // destination upper 64 bits and the source MMX register.
+    c.mm[1] = (static_cast<uint64_t>(0xfffffff0u) << 32) | 7u;
+    c.xmm[0][2] = 0x7fcabcdeu;
+    c.xmm[0][3] = 0xdeadbeefu;
+    code(0x11230, {0x0f,0x2a,0xc1});
+    reflex_packed_sse(&c, 0x11230);
+    assert(lane(c, 0, 0) == 7.0f && lane(c, 0, 1) == -16.0f);
+    assert(c.xmm[0][2] == 0x7fcabcdeu && c.xmm[0][3] == 0xdeadbeefu);
+    assert(c.mm[1] == ((static_cast<uint64_t>(0xfffffff0u) << 32) | 7u));
+    const uint32_t two_ints[] = {0xffffffdcu, 19u};
+    memcpy(g_mem + 0x17100, two_ints, 8);
+    code(0x11240, {0x0f,0x2a,0x05,0x00,0x71,0x01,0x00});
+    reflex_packed_sse(&c, 0x11240);
+    assert(lane(c, 0, 0) == -36.0f && lane(c, 0, 1) == 19.0f);
+    assert(c.xmm[0][2] == 0x7fcabcdeu && c.xmm[0][3] == 0xdeadbeefu);
+
+    // No 66 mandatory prefix is valid for the MMX-source form.
+    code(0x11250, {0x66,0x0f,0x2a,0xc1});
+    reflex_packed_sse(&c, 0x11250);
+    assert(traps == 5);
     return 0;
 }
 """
