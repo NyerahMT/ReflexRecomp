@@ -152,6 +152,9 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
     // and are deliberately not eligible for these half-register shuffles.
     const bool half_register_move = prefix == 0 &&
         (opcode == 0x12 || opcode == 0x16) && (modrm >> 6) == 3;
+    const bool convert_dq_ps = prefix == 0 && opcode == 0x5b;
+    const bool convert_ps_dq = prefix == 0x66 && opcode == 0x5b;
+    const bool cmp_greater_i32 = prefix == 0x66 && opcode == 0x66;
     const bool convert_ps_pd = prefix == 0 && opcode == 0x5a;
     const bool convert_pd_ps = prefix == 0x66 && opcode == 0x5a;
     const bool compare_packed = prefix == 0 && opcode == 0xc2;
@@ -159,6 +162,7 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
     const bool compare_scalar_sd = prefix == 0xf2 && opcode == 0xc2;
 
     if (!packed_arithmetic && !scalar_reciprocal && !half_register_move &&
+        !convert_dq_ps && !convert_ps_dq && !cmp_greater_i32 &&
         !convert_ps_pd && !convert_pd_ps &&
         !compare_packed && !compare_scalar_ss && !compare_scalar_sd) {
         std::fprintf(stderr, "[reflex-simd] unsupported opcode at %08x prefix=%02x op=%02x\n",
@@ -211,6 +215,34 @@ extern "C" void reflex_packed_sse(X86 *c, uint32_t guest_pc) {
             result[2] = rhs[0];
             result[3] = rhs[1];
         }
+    } else if (convert_dq_ps) {
+        // CVTDQ2PS: signed 32-bit integer lanes -> float32 lanes.
+        for (unsigned n = 0; n < 4; ++n) {
+            int32_t signed_lane;
+            std::memcpy(&signed_lane, &rhs[n], sizeof signed_lane);
+            store_f32(result[n], static_cast<float>(signed_lane));
+        }
+    } else if (convert_ps_dq) {
+        // CVTPS2DQ rounds according to MXCSR; default guest mode is nearest
+        // even. Host rounding is used pending explicit MXCSR emulation.
+        // Invalid NaN, Inf or overflow yields the x86 indefinite integer.
+        for (unsigned n = 0; n < 4; ++n) {
+            const double x = static_cast<double>(lane_f32(rhs[n]));
+            const double rounded = std::nearbyint(x);
+            if (!std::isfinite(x) || rounded < -2147483648.0 ||
+                rounded >= 2147483648.0) {
+                result[n] = 0x80000000u;
+            } else {
+                const int32_t signed_lane = static_cast<int32_t>(rounded);
+                std::memcpy(&result[n], &signed_lane, sizeof signed_lane);
+            }
+        }
+    } else if (cmp_greater_i32) {
+        // PCMPGTD compares signed dword lanes. Sign-bit bias makes the
+        // comparison bit-exact without implementation-defined casts.
+        for (unsigned n = 0; n < 4; ++n)
+            result[n] = ((lhs[n] ^ 0x80000000u) >
+                         (rhs[n] ^ 0x80000000u)) ? 0xffffffffu : 0u;
     } else if (convert_ps_pd) {
         // CVTPS2PD xmm, xmm/m64: two f32 -> two f64 (all 128 bits).
         const double a = static_cast<double>(lane_f32(rhs[0]));
