@@ -1675,14 +1675,49 @@ void fmod_fail_out_ptr(X86 *c) {
     set_eax(c, 1);
 }
 
+// The original Reflex audio worker dispatches EventSystem::load through
+// vtable byte offset 0x24 (slot 9). ABI: (this, filename_or_data,
+// FMOD_EVENT_LOADINFO*, FMOD::EventProject**). An absent slot caused a
+// null indirect call at original return PC 008065b9.
+//
+// We do not yet parse FEV event banks. Explicitly return failure with a
+// cleared output instead of pretending audio resources are loaded, while
+// preserving the proper guest call/stack ABI for the game's error path.
+void fmod_event_system_load(X86 *c) {
+    const uint32_t filename = arg(c, 1);
+    const uint32_t info = arg(c, 2);
+    const uint32_t out = arg(c, 3);
+    if (!out || !gm_valid(out, 4)) {
+        set_eax(c, 1);
+        return;
+    }
+    wr32(out, 0);
+    if (!filename || !gm_valid(filename, 1)) {
+        set_eax(c, 1);
+        return;
+    }
+    // Reflex passes a 24-byte FMOD_EVENT_LOADINFO structure at this site.
+    // Reject malformed guest input; never read a truncated guest structure.
+    if (info && (!gm_valid(info, 24) || rd32(info) != 24u)) {
+        set_eax(c, 1);
+        return;
+    }
+    const std::string name = gm_str(filename, 1024);
+    fprintf(stderr,
+            "[reflex-fmod] EventSystem::load path=\\"%s\\" info=%08x "
+            "project_out=%08x (FEV bank decoding not implemented)\\n",
+            name.c_str(), info, out);
+    set_eax(c, 1); // Nonzero FMOD_RESULT: unsupported FEV bank load.
+}
+
 uint32_t fmod_event_system_vtable() {
     if (g_fmod_event_vtable && heap_owns(g_fmod_event_vtable))
         return g_fmod_event_vtable;
 
     // FMOD Designer EventSystem ABI reached by Reflex:
     //   0 init, 1 release, 2 update, 3 setMediaPath, 4 setPluginPath,
-    //   5 getVersion, 6 getInfo, 7 getSystemObject, 8 getMusicSystem.
-    const uint32_t vt = heap_alloc(9 * 4, true, 16);
+    //   5 getVersion, 6 getInfo, 7 getSystemObject, 8 getMusicSystem,\n    //   9 load (name_or_data, FMOD_EVENT_LOADINFO*, EventProject**).
+    const uint32_t vt = heap_alloc(10 * 4, true, 16);
     if (!vt)
         return 0;
 
@@ -1699,10 +1734,10 @@ uint32_t fmod_event_system_vtable() {
         {"FMOD::EventSystem::getVersion", 2, fmod_event_get_version},
         {"FMOD::EventSystem::getInfo", 2, fmod_fail},
         {"FMOD::EventSystem::getSystemObject", 2, fmod_event_get_system_object},
-        {"FMOD::EventSystem::getMusicSystem", 2, fmod_fail_out_ptr},
+        {"FMOD::EventSystem::getMusicSystem", 2, fmod_fail_out_ptr},\n        {"FMOD::EventSystem::load", 4, fmod_event_system_load},
     };
 
-    for (uint32_t i = 0; i < 9; ++i) {
+    for (uint32_t i = 0; i < 10; ++i) {
         const uint32_t tramp = imports_alloc_trampoline(
             "fmod_eventL.dll", methods[i].name, methods[i].fn, methods[i].argc);
         if (!tramp) {
