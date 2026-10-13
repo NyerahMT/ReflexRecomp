@@ -51,6 +51,8 @@ on:
       - "tools/patch_reflex_cached_resource_find.py"
       - "tools/audit_translation_traps.py"
       - "tools/scan_reflex_backlog.py"
+      - "tools/identify_reflex_unknown_traps.py"
+      - "tests/test_identify_reflex_unknown_traps.py"
       - "tests/test_scan_reflex_backlog.py"
       - "tools/check_reflex_boot_progress.py"
       - "tools/profile_reflex_decoder.py"
@@ -358,6 +360,15 @@ jobs:
             --generated build/recomp/gen \
             --asm analysis/decompiled/MXReflex.exe/functions \
             --output build/logs/translation-trap-audit.txt
+      # Inspect only the exact PCs that were not mapped in Ghidra's
+      # static listing. Keep instruction bytes and the private PE out of logs.
+      - name: Classify remaining unknown guest opcodes
+        run: |
+          python3 tools/identify_reflex_unknown_traps.py \
+            --trap-report build/logs/translation-trap-audit.txt \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --output build/logs/reflex-unknown-instruction-candidates.txt
+
 
       - name: Build from cached translation
         id: host
