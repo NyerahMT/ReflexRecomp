@@ -98,14 +98,14 @@ def test_fmod_event_system_load_slot_nine_has_valid_abi_and_no_fake_success():
     assert "if (!out || !gm_valid(out, 4))" in code
     assert "wr32(out, 0);" in code
     assert "if (info && (!gm_valid(info, 24) || rd32(info) != 24u))" in code
-    assert "const uint32_t vt = heap_alloc(10 * 4, true, 16);" in code
+    assert "const uint32_t vt = heap_alloc(41 * 4, true, 16);" in code
     vtable = code.split("uint32_t fmod_event_system_vtable()", 1)[1]
     entries = vtable.split("} methods[] = {", 1)[1].split("};", 1)[0]
-    assert entries.count('{"FMOD::EventSystem::') == 10
+    assert entries.count('{"FMOD::EventSystem::') == 41
     assert entries.strip().splitlines()[9].strip() == (
         '{"FMOD::EventSystem::load", 4, fmod_event_system_load},'
     )
-    assert "for (uint32_t i = 0; i < 10; ++i)" in vtable
+    assert "for (uint32_t i = 0; i < 41; ++i)" in vtable
     handler = code.split("void fmod_event_system_load(X86 *c)", 1)[1].split(
         "uint32_t fmod_event_system_vtable()", 1)[0]
     assert "set_eax(c, 1); // Nonzero FMOD_RESULT" in handler
@@ -144,3 +144,47 @@ def test_fmod_sound_imports_do_not_return_false_success_or_leak_stack_words():
     assert "set_eax(c, 1);" in count
     assert "set_eax(c, 0);" not in count
     assert r'unsupported\n"' in count
+
+
+def test_fmod_eventsystem_has_correct_designer_4x_slot_order_and_preload_fsb_abi():
+    """The 008067fb call dispatches EventSystem slot 38, not a Sound method."""
+    code = (ROOT / "runtime" / "reflex_compat.cpp").read_text()
+    vtable = code.split("uint32_t fmod_event_system_vtable()", 1)[1]
+    entries = vtable.split("} methods[] = {", 1)[1].split("};", 1)[0]
+    import re
+    methods = re.findall(
+        r'\{"FMOD::EventSystem::(\w+)",\s*(\d+),\s*(\w+)\}', entries
+    )
+    assert len(methods) == 41, "Every guest vtable slot must have a handler"
+    expected = {
+        0: ("init", "5"),
+        7: ("getSystemObject", "2"),
+        9: ("load", "4"),
+        10: ("unload", "1"),
+        18: ("getGroup", "4"),
+        19: ("getEvent", "4"),
+        34: ("set3DListenerAttributes", "6"),
+        37: ("getUserData", "2"),
+        38: ("preloadFSB", "4"),
+        39: ("unloadFSB", "3"),
+        40: ("getMemoryInfo", "5"),
+    }
+    for slot, (name, argc) in expected.items():
+        assert methods[slot][:2] == (name, argc), (slot, methods[slot])
+    assert methods[38][2] == "fmod_event_system_preload_fsb"
+    assert methods[39][2] == "fmod_event_system_unload_fsb"
+    for entry in methods:
+        assert re.search(
+            rf"\bvoid\s+{entry[2]}\(X86\s*\*c\)",
+            code,
+        ), entry
+
+    handler = code.split("void fmod_event_system_preload_fsb(X86 *c)", 1)[1].split(
+        "void fmod_event_system_unload_fsb(X86 *c)", 1
+    )[0]
+    assert "const uint32_t filename = arg(c, 1);" in handler
+    assert "const uint32_t stream_instance = arg(c, 2);" in handler
+    assert "const uint32_t sound = arg(c, 3);" in handler
+    assert "filename && gm_valid(filename, 1)" in handler
+    assert "set_eax(c, 1);" in handler
+    assert "set_eax(c, 0);" not in handler
