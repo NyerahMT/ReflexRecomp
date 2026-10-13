@@ -113,12 +113,12 @@ def test_bulk_patch_covers_six_half_register_shuffles(tmp_path):
     mnemonics = ["MOVLHPS", "MOVHLPS", "MOVLHPS",
                  "MOVLHPS", "MOVHLPS", "MOVLHPS"]
     (gen / "chunk_086.c").write_text(
-        "void test(X86 *c) {\\n"
-        + "".join(f"recomp_unmodelled(c,0x{addr:08x}u);return;\\n" for addr in addresses)
-        + "}\\n"
+        "void test(X86 *c) {\n"
+        + "".join(f"recomp_unmodelled(c,0x{addr:08x}u);return;\n" for addr in addresses)
+        + "}\n"
     )
     (asm / "00860f00.asm").write_text("".join(
-        f"{addr:08X}  {mnemonic} XMM0,XMM1\\n"
+        f"{addr:08X}  {mnemonic} XMM0,XMM1\n"
         for addr, mnemonic in zip(addresses, mnemonics)
     ))
     counts = mod.patch_cache(gen, asm)
