@@ -40,7 +40,7 @@ REPLACEMENT = "reflex_packed_sse(c, 0x{addr:08x}u);"
 # incomplete function listing. Never classify arbitrary bytes as SIMD:
 # both the objdump mnemonic and the original prefix/opcode must agree.
 OBJDUMP = re.compile(
-    r"^\\s*([0-9a-fA-F]+):\\s+((?:[0-9a-fA-F]{2}\\s+)+)([A-Za-z0-9_]+)\\b",
+    r"^\s*([0-9a-fA-F]+):\s+((?:[0-9a-fA-F]{2}\s+)+)([A-Za-z0-9_]+)\b",
     re.M,
 )
 UNMAPPED_SUPPORTED = {
