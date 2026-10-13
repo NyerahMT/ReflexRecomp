@@ -334,6 +334,12 @@ jobs:
             --start 0x004ef3f2 --end 0x004ef445 \
             --sites 004ef3fe,004f019e \
             --output build/logs/type1-decoder-next-opcodes.txt
+          # Exact bounded disassembly around the worker-thread null vcall.
+          # Only original assembly, no game source or binary in artifact.
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --start 0x00806560 --end 0x008065e0 \
+            --output build/logs/post-intro-null-call-asm-window.txt
 
       - name: Audit cached translation opcode coverage
         run: |
