@@ -133,6 +133,7 @@ def test_fmod_sound_imports_do_not_return_false_success_or_leak_stack_words():
     assert "wr32(out, 0);" in create
     assert "set_eax(c, 1);" in create
     assert "set_eax(c, 0);" not in create
+    assert r'unsupported\n"' in create
 
     count = code.split("void fmod_sound_get_num_sub_sounds(X86 *c)", 1)[1].split(
         "void fmod_system_get_master_channel_group(X86 *c)", 1)[0]
@@ -142,3 +143,4 @@ def test_fmod_sound_imports_do_not_return_false_success_or_leak_stack_words():
     assert "wr32(count_out, 0);" in count
     assert "set_eax(c, 1);" in count
     assert "set_eax(c, 0);" not in count
+    assert r'unsupported\n"' in count
