@@ -10,6 +10,7 @@
 #include "reflex_crt_wide_format.h"
 #include "reflex_crt_fast_strings.h"
 #include "reflex_crt_termination.h"
+#include "reflex_d3dx_float16.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1186,6 +1187,31 @@ uint32_t d3dx_make_source_buffer(uint32_t src, uint32_t size) {
     wr32(obj + 8, data);
     wr32(obj + 12, size);
     return obj;
+}
+
+// D3DXFLOAT16* WINAPI D3DXFloat32To16Array(D3DXFLOAT16 *out,
+ //                                         const float *in, UINT count);
+ // Three 32-bit stack arguments, callee-cleaned on Win32.
+void d3dx_float32_to16_array(X86 *c) {
+    const uint32_t out = arg(c, 0);
+    const uint32_t in = arg(c, 1);
+    const uint32_t count = arg(c, 2);
+    if (count == 0) {
+        set_eax(c, out);
+        return;
+    }
+    if (count > GUEST_SIZE / 4u ||
+        !gm_valid(in, count * 4u) ||
+        !gm_valid(out, count * 2u)) {
+        set_eax(c, 0);
+        return;
+    }
+    // Snapshot the f32 inputs so any guest source/output aliasing is safe.
+    std::vector<uint32_t> source(count);
+    std::memcpy(source.data(), g_mem + in, static_cast<size_t>(count) * 4u);
+    for (uint32_t i = 0; i < count; ++i)
+        wr16(out + i * 2u, reflex_d3dx::f32_to_f16_bits(source[i]));
+    set_eax(c, out);
 }
 
 void d3dx_compile_shader_bridge(X86 *c) {
@@ -2925,6 +2951,7 @@ const ImportShim k_reflex_shims[] = {
 
     // Reached external middleware imports. Model the ABI and fail explicitly
     // when the host does not yet provide the underlying service.
+    {"d3dx9_43.dll", "D3DXFloat32To16Array", 3, d3dx_float32_to16_array},
     {"d3dx9_43.dll", "D3DXCompileShader", 10, d3dx_compile_shader_bridge},
     {"d3dx9_43.dll", "D3DXGetShaderConstantTable", 2, d3dx_get_shader_constant_table},
     {"fmodexL.dll", "FMOD_Debug_SetLevel", 1, fmod_ok},
