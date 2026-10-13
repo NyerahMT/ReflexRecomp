@@ -1646,7 +1646,7 @@ void fmod_system_create_sound(X86 *c) {
     if (n <= 16 || (n & (n - 1)) == 0) {
         fprintf(stderr,
                 "[reflex-fmod] System::createSound call=%llu source=%08x "
-                "mode=%08x exinfo=%08x sound_out=%08x unsupported\\n",
+                "mode=%08x exinfo=%08x sound_out=%08x unsupported\n",
                 n, source, mode, exinfo, out);
     }
     set_eax(c, 1);
@@ -1669,7 +1669,7 @@ void fmod_sound_get_num_sub_sounds(X86 *c) {
     if (n <= 16 || (n & (n - 1)) == 0) {
         fprintf(stderr,
                 "[reflex-fmod] Sound::getNumSubSounds call=%llu this=%08x "
-                "count_out=%08x unsupported\\n",
+                "count_out=%08x unsupported\n",
                 n, sound, count_out);
     }
     set_eax(c, 1);
