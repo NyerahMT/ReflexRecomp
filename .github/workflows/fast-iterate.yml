@@ -340,6 +340,11 @@ jobs:
             --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
             --start 0x00806560 --end 0x008065e0 \
             --output build/logs/post-intro-null-call-asm-window.txt
+          # Next audio-worker failure after FMOD EventSystem slot 9 was added.
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --start 0x008067a0 --end 0x00806840 \
+            --output build/logs/fmod-next-null-call-asm-window.txt
 
       - name: Audit cached translation opcode coverage
         run: |
