@@ -50,6 +50,8 @@ on:
       - "tools/patch_reflex_cached_resource_gates.py"
       - "tools/patch_reflex_cached_resource_find.py"
       - "tools/audit_translation_traps.py"
+      - "tools/scan_reflex_backlog.py"
+      - "tests/test_scan_reflex_backlog.py"
       - "tools/check_reflex_boot_progress.py"
       - "tools/profile_reflex_decoder.py"
       - "tools/sample_reflex_native_threads.py"
@@ -681,6 +683,20 @@ jobs:
             build/logs/runtime-long-load.log | tail -n 25 || true
           # A loader completion must be verified from original guest checkpoints
           # and actual menu rendering; never infer it from a green workflow.
+
+      # Count observed compatibility gaps even after an early native failure.
+      # Avoid publishing the private game binary or full disassembly.
+      - name: Inventory Reflex compatibility backlog
+        if: always()
+        run: |
+          python3 tools/scan_reflex_backlog.py \
+            --trap-report build/logs/translation-trap-audit.txt \
+            --runtime build/logs/runtime.log \
+            --runtime build/logs/runtime-intro-probe.log \
+            --runtime build/logs/runtime-profile-60s.log \
+            --runtime build/logs/runtime-long-load.log \
+            --json build/logs/reflex-compatibility-backlog.json \
+            --markdown build/logs/reflex-compatibility-backlog.md
 
       - name: Upload fast-path logs
         if: always()
