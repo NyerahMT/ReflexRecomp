@@ -1,6 +1,10 @@
 """Regression coverage for the Reflex D3D9 swap-chain kit patch."""
 import importlib.util
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools/patch_reflex_d3d9_swapchain.py"
 spec = importlib.util.spec_from_file_location("swap_patch", SCRIPT)
@@ -30,6 +34,7 @@ D3D_FIXTURE = """static const uint8_t IID_IDirect3DDevice9_[16] =
 
 D9_STUB(CreateAdditionalSwapChain, 3)
 D9_STUB(GetSwapChain, 3)
+D9_STUB(GetRenderTarget, 3)
 
 static const ComMethod g_d3d9[] = {
 };
@@ -54,6 +59,7 @@ def test_swapchain_patch_defines_real_com_interface(tmp_path):
 
     mod.patch_com_header(com)
     mod.patch_d3d9(d3d)
+    mod.patch_render_target(d3d)
 
     ch = com.read_text()
     dx = d3d.read_text()
@@ -63,6 +69,15 @@ def test_swapchain_patch_defines_real_com_interface(tmp_path):
 
     assert "D9_STUB(GetSwapChain, 3)" not in dx
     assert "D9_STUB(CreateAdditionalSwapChain, 3)" not in dx
+    assert "D9_STUB(GetRenderTarget, 3)" not in dx
+    assert "void Dev_GetRenderTarget(X86 *c)" in dx
+    assert "const uint32_t index = arg(c, 1);" in dx
+    assert "const uint32_t out = arg(c, 2);" in dx
+    assert "com_get(pl.color_target[index])" in dx
+    assert "surface = device_backbuffer(dev);" in dx
+    assert "com_addref(surface);" in dx
+    assert "com_out_ptr(out, view);" in dx
+    assert "com_ret(c, D3D_OK9);" in dx
     assert "void Dev_GetSwapChain(X86 *c)" in dx
     assert "void Dev_CreateAdditionalSwapChain(X86 *c)" in dx
     assert "static const ComMethod g_swapchain9[]" in dx
@@ -83,7 +98,33 @@ def test_swapchain_patch_defines_real_com_interface(tmp_path):
     first_com, first_d3d = ch, dx
     mod.patch_com_header(com)
     mod.patch_d3d9(d3d)
+    mod.patch_render_target(d3d)
     assert com.read_text() == first_com
     assert d3d.read_text() == first_d3d
     assert dx.count("IF_D3DSWAPCHAIN9") >= 1
     assert dx.count("static const ComMethod g_swapchain9[]") == 1
+
+
+def test_render_target_only_replaces_the_pinned_stub(tmp_path):
+    d3d = tmp_path / "d3d9.cpp"
+    d3d.write_text("D9_STUB(GetRenderTarget, 3)\nD9_STUB(GetTexture, 3)\n")
+    mod.patch_render_target(d3d)
+    changed = d3d.read_text()
+    assert "D9_STUB(GetRenderTarget, 3)" not in changed
+    assert "D9_STUB(GetTexture, 3)" in changed
+    assert changed.count("void Dev_GetRenderTarget(X86 *c)") == 1
+    assert "index >= 4u" in changed
+    assert "if (!dev || index >= 4u || !out || !gm_fits(out, 4))" in changed
+    assert "com_out_ptr(out, 0);" in changed
+    assert changed.index("com_addref(surface);") < changed.index("com_out_ptr(out, view);")
+    assert "return;" in changed
+    mod.patch_render_target(d3d)
+    assert d3d.read_text() == changed
+
+
+def test_render_target_patch_rejects_unknown_pinned_kit_revision(tmp_path):
+    d3d = tmp_path / "d3d9.cpp"
+    d3d.write_text("D9_STUB(GetTexture, 3)\n")
+    with pytest.raises(SystemExit, match="expected exactly one patch anchor"):
+        mod.patch_render_target(d3d)
+    assert d3d.read_text() == "D9_STUB(GetTexture, 3)\n"
