@@ -1856,6 +1856,44 @@ void fmod_system_get_master_sound_group(X86 *c) {
     set_eax(c, 0);
 }
 
+// The original game configures its FMOD group state during loading.
+// Retain the request for the already-exported master group handles, without
+// implying that the headless backend can play or mix actual sounds.
+std::mutex g_fmod_group_mutex;
+bool g_fmod_master_muted = false;
+uint32_t g_fmod_master_sound_volume_bits = 0x3f800000u;
+
+void fmod_channel_group_set_mute(X86 *c) {
+    // (FMOD::ChannelGroup *this, bool mute): 2 guest stack words.
+    const uint32_t self = arg(c, 0);
+    if (!self || self != g_fmod_channel_group || !heap_owns(self)) {
+        set_eax(c, 1u);
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_fmod_group_mutex);
+    g_fmod_master_muted = (arg(c, 1) & 0xffu) != 0u;
+    set_eax(c, 0u);
+}
+
+void fmod_sound_group_set_volume(X86 *c) {
+    // (FMOD::SoundGroup *this, float volume): 2 guest stack words.
+    const uint32_t self = arg(c, 0);
+    if (!self || self != g_fmod_sound_group || !heap_owns(self)) {
+        set_eax(c, 1u);
+        return;
+    }
+    const uint32_t bits = arg(c, 1);
+    float volume;
+    std::memcpy(&volume, &bits, sizeof(volume));
+    if (!std::isfinite(volume) || volume < 0.0f || volume > 1.0f) {
+        set_eax(c, 1u);
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_fmod_group_mutex);
+    g_fmod_master_sound_volume_bits = bits;
+    set_eax(c, 0u);
+}
+
 void fmod_event_get_system_object(X86 *c) {
     const uint32_t out = arg(c, 1); // [this, FMOD::System **]
     const uint32_t system = fmod_opaque(g_fmod_system);
@@ -2519,6 +2557,45 @@ void crt_wcsncpy(X86 *c) {
     set_eax(c, dst);
 }
 
+// MSVCR90 wcsncmp: wchar_t is UTF-16 on Windows x86, not the
+// platform-dependent 32-bit wchar_t of Linux/macOS. Compare code units as
+// unsigned 16-bit values, stopping on NUL or after exactly count units.
+void crt_wcsncmp(X86 *c) {
+    const uint32_t lhs = arg(c, 0);
+    const uint32_t rhs = arg(c, 1);
+    const uint32_t count = arg(c, 2);
+    if (!count) {
+        set_eax(c, 0u);
+        return;
+    }
+    for (uint64_t i = 0; i < count; ++i) {
+        const uint64_t la = uint64_t(lhs) + i * 2u;
+        const uint64_t ra = uint64_t(rhs) + i * 2u;
+        const bool lv = lhs && la <= UINT32_MAX &&
+            gm_valid(static_cast<uint32_t>(la), 2u);
+        const bool rv = rhs && ra <= UINT32_MAX &&
+            gm_valid(static_cast<uint32_t>(ra), 2u);
+        if (!lv || !rv) {
+            // Do not dereference an invalid guest pointer. If either string
+            // ends outside the arena, return a deterministic non-equal result
+            // instead of claiming equality with an unexamined string.
+            set_eax(c, !lv ? static_cast<uint32_t>(-1) : 1u);
+            return;
+        }
+        const uint16_t a = rd16(static_cast<uint32_t>(la));
+        const uint16_t b = rd16(static_cast<uint32_t>(ra));
+        if (a != b) {
+            set_eax(c, a > b ? 1u : static_cast<uint32_t>(-1));
+            return;
+        }
+        if (!a) {
+            set_eax(c, 0u);
+            return;
+        }
+    }
+    set_eax(c, 0u);
+}
+
 void crt_wcsrchr(X86 *c) {
     const uint32_t src = arg(c, 0);
     const uint16_t needle = static_cast<uint16_t>(arg(c, 1));
@@ -3056,6 +3133,7 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "atof", ARGC_CDECL, crt_atof},
     {"MSVCR90.dll", "ceil", ARGC_CDECL, crt_ceil},
     {"MSVCR90.dll", "strtok", ARGC_CDECL, crt_strtok},
+    {"MSVCR90.dll", "wcsncmp", ARGC_CDECL, crt_wcsncmp},
     {"MSVCR90.dll", "strcspn", ARGC_CDECL, crt_strcspn},
     {"MSVCR90.dll", "localeconv", ARGC_CDECL, crt_localeconv},
 
@@ -3101,6 +3179,12 @@ const ImportShim k_reflex_shims[] = {
     {"fmodexL.dll",
      "?setAdvancedSettings@System@FMOD@@QAG?AW4FMOD_RESULT@@PAUFMOD_ADVANCEDSETTINGS@@@Z",
      2, fmod_ok},
+    {"fmodexL.dll",
+     "?setMute@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@_N@Z",
+     2, fmod_channel_group_set_mute},
+    {"fmodexL.dll",
+     "?setVolume@SoundGroup@FMOD@@QAG?AW4FMOD_RESULT@@M@Z",
+     2, fmod_sound_group_set_volume},
     {"fmodexL.dll",
      "?set3DNumListeners@System@FMOD@@QAG?AW4FMOD_RESULT@@H@Z",
      2, fmod_system_set_3d_num_listeners},
