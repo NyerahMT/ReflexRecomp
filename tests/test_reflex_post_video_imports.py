@@ -230,3 +230,38 @@ def test_fmod_system_spatial_exports_have_exact_msvc_32bit_abi():
     assert 'const uint32_t props = arg(c, 1);' in reverb
     assert 'gm_valid(props, 4u)' in reverb
     assert 'set_eax(c, 0)' in reverb
+
+
+
+def test_original_game_crt_math_and_tokenizer_imports_are_cdecl_with_guest_state():
+    """Run 162 reached these CRT names before the FMOD spatial ABI failure."""
+    code = (ROOT / "runtime" / "reflex_compat.cpp").read_text()
+    expected = (
+        ('ceil', 'crt_ceil'),
+        ('__libm_sse2_acos', 'crt_libm_sse2_acos'),
+        ('__libm_sse2_pow', 'crt_libm_sse2_pow'),
+        ('strtok', 'crt_strtok'),
+    )
+    for export, fn in expected:
+        assert code.count(f'"{export}", ARGC_CDECL, {fn}') == 1
+        assert f'void {fn}(X86 *c)' in code
+    # SSE2 libm internal functions do not return floating point values in ST0.
+    acos = code.split('void crt_libm_sse2_acos(X86 *c)', 1)[1].split(
+        'void crt_libm_sse2_pow(X86 *c)', 1)[0]
+    assert 'xmm_set_f64(c, 0, std::acos(xmm_f64(c, 0)))' in acos
+    power = code.split('void crt_libm_sse2_pow(X86 *c)', 1)[1].split(
+        'void crt_libm_sse2_expf(X86 *c)', 1)[0]
+    assert 'std::pow(base, exponent)' in power
+    assert 'xmm_f64(c, 1)' in power
+    # Standard ceil is a stack-argument x87-return function on 32-bit x86.
+    ceil = code.split('void crt_ceil(X86 *c)', 1)[1].split(
+        'void crt_strtok(X86 *c)', 1)[0]
+    assert 'rdf64(esp + 4u)' in ceil
+    assert 'fpush(c, std::ceil(' in ceil
+    tokenize = code.split('void crt_strtok(X86 *c)', 1)[1].split(
+        'void crt_atof(X86 *c)', 1)[0]
+    assert 'static thread_local uint32_t continuation' in tokenize
+    assert 'gm_str(delims, 32768u)' in tokenize
+    assert 'wr8(current, 0)' in tokenize
+    assert 'set_eax(c, token)' in tokenize
+    assert 'gm_valid(current, 1u)' in tokenize
