@@ -33,6 +33,9 @@ def test_virtual_lookup_trace_uses_c_escaped_newline(tmp_path):
         assert 'const uint32_t object = slot_ok ? rd32(slot) : 0u;' in generated
         assert 'const uint32_t release = vtable_ok ? rd32(vtable + 8u) : 0u;' in generated
         assert 'method94=%08x method9c=%08x' in generated
+        assert 'owner_slot=%08x owner_slot_value=%08x' in generated
+        assert 'slot_minus4=%08x' in generated
+        assert 'c->r[R_ESI], c->r[R_EBP], trace_esp' in generated
         assert 'arg_ok ? rd32(trace_esp + 4u) : 0xffffffffu' in generated
         assert 'trace_ret == 0x008065b9u' in generated
         assert 'trace_ret == 0x008065b9u || trace_ret == 0x008067fdu' in generated
