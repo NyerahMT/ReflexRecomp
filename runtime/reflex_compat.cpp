@@ -584,6 +584,33 @@ void crt_cipow(X86 *c) {
     set_eax(c, 0);
 }
 
+// MSVCR90!_CIfmod is a compiler intrinsic, not fmod(double,double):
+// the x86 caller provides ST(0)=divisor, ST(1)=dividend. It consumes both
+// x87 operands and returns the remainder in the single remaining ST(0).
+// There are no conventional stack arguments; the CRT import uses cdecl.
+void crt_cifmod(X86 *c) {
+    const uint32_t divisor_slot = c->fpu_top & 7u;
+    const uint32_t dividend_slot = (c->fpu_top + 1u) & 7u;
+    const uint16_t divisor_tag = (c->fpu_tag >> (2u * divisor_slot)) & 3u;
+    const uint16_t dividend_tag = (c->fpu_tag >> (2u * dividend_slot)) & 3u;
+    if (divisor_tag == 3u || dividend_tag == 3u) {
+        // An empty x87 register is a guest stack fault, not a reason to
+        // fabricate a valid remainder or disturb the remaining stack.
+        set_eax(c, 0);
+        return;
+    }
+    const double result = std::fmod(c->st[dividend_slot], c->st[divisor_slot]);
+    c->fpu_tag |= static_cast<uint16_t>(3u << (2u * divisor_slot));
+    c->fpu_top = (c->fpu_top + 1u) & 7u;
+    c->st[dividend_slot] = result;
+    c->st_bits[dividend_slot] = 0;
+    c->st_exact[dividend_slot] = 0;
+    c->fpu_tag &= static_cast<uint16_t>(~(3u << (2u * dividend_slot)));
+    c->fpu_sw =
+        static_cast<uint16_t>((c->fpu_sw & ~0x3800u) | ((c->fpu_top & 7u) << 11));
+    set_eax(c, 0);
+}
+
 void crt_strchr(X86 *c) {
     const uint32_t src = arg(c, 0);
     const uint8_t needle = static_cast<uint8_t>(arg(c, 1) & 0xffu);
@@ -3228,6 +3255,7 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "_unlock", ARGC_CDECL, crt_noop},
     {"MSVCR90.dll", "srand", ARGC_CDECL, crt_srand},
     {"MSVCR90.dll", "_CIpow", ARGC_CDECL, crt_cipow},
+    {"MSVCR90.dll", "_CIfmod", ARGC_CDECL, crt_cifmod},
 
     // Host-backed stdio. FILE* values exposed to the guest are opaque guest
     // handles; host FILE* pointers never escape into the 32-bit address space.
