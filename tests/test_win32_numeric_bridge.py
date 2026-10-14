@@ -67,3 +67,15 @@ def test_native_win32_integer_width_and_overflow(tmp_path):
         check=True, capture_output=True, text=True,
     )
     subprocess.run([str(executable)], check=True, capture_output=True, text=True)
+
+
+def test_atoi_export_uses_existing_bounded_win32_numeric_bridge():
+    code = (ROOT / "runtime" / "reflex_compat.cpp").read_text()
+    assert code.count('"MSVCR90.dll", "atoi", ARGC_CDECL, crt_atoi') == 1
+    atoi = code.split("void crt_atoi(X86 *c)", 1)[1].split(
+        "void crt_atol(X86 *c)", 1
+    )[0]
+    assert "const uint32_t src = arg(c, 0)" in atoi
+    assert "gm_valid(src, 1)" in atoi
+    assert "gm_str(src, 4096)" in atoi
+    assert "reflex_crt::parse_signed32(input, 10).value" in atoi

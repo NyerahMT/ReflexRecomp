@@ -940,6 +940,15 @@ void crt_aligned_free(X86 *c) {
     set_eax(c, 0);
 }
 
+// C89 MSVCR90 atoi(const char*) is a cdecl int32 conversion identical
+// to atol on 32-bit Windows; preserve the existing numeric parser's
+// bounded guest-string and overflow semantics.
+void crt_atoi(X86 *c) {
+    const uint32_t src = arg(c, 0);
+    const std::string input = src && gm_valid(src, 1) ? gm_str(src, 4096) : "";
+    set_eax(c, reflex_crt::parse_signed32(input, 10).value);
+}
+
 void crt_atol(X86 *c) {
     const uint32_t src = arg(c, 0);
     const std::string input = src && gm_valid(src, 1) ? gm_str(src, 4096) : "";
@@ -2524,6 +2533,77 @@ void crt_vswprintf_c_l(X86 *c) {
     set_eax(c, static_cast<uint32_t>(written));
 }
 
+// MSVCR90 qsort(base, count, width, comparator): the function is cdecl,
+// and its comparator is itself a guest cdecl function taking two pointers.
+// Invoke that *original translated comparator*, not a host stub that would
+// sort by arbitrary byte order. Heapsort performs O(n log n) guest callbacks,
+// uses constant host memory and keeps the compared elements at valid guest
+// addresses throughout the sort.
+void crt_qsort(X86 *c) {
+    const uint32_t base = arg(c, 0);
+    const uint32_t count = arg(c, 1);
+    const uint32_t width = arg(c, 2);
+    const uint32_t comparator = arg(c, 3);
+    if (count < 2u) {
+        set_eax(c, 0u); // qsort returns void.
+        return;
+    }
+    const uint64_t bytes = uint64_t(count) * uint64_t(width);
+    if (!base || !width || !comparator ||
+        bytes > UINT32_MAX || !gm_valid(base, static_cast<uint32_t>(bytes)) ||
+        !gm_valid(comparator, 1u)) {
+        static uint32_t reported = 0u;
+        if (reported++ < 8u)
+            fprintf(stderr, "[reflex-crt] qsort invalid guest array: base=%08x count=%u width=%u compare=%08x\\n",
+                    base, count, width, comparator);
+        set_eax(c, 0u);
+        return;
+    }
+    const auto at = [&](uint32_t index) -> uint32_t {
+        return base + index * width; // Valid from checked count * width.
+    };
+    const auto less = [&](uint32_t a, uint32_t b) -> bool {
+        // guest_call builds a sentinel-terminated guest stack frame and
+        // restores ESP/EIP after the translated comparator returns.
+        const uint32_t result = guest_call(c, comparator, at(a), at(b));
+        return static_cast<int32_t>(result) < 0;
+    };
+    const auto exchange = [&](uint32_t a, uint32_t b) {
+        if (a == b) return;
+        uint8_t scratch[256];
+        const uint32_t pa = at(a), pb = at(b);
+        for (uint32_t off = 0; off < width;) {
+            const uint32_t n = std::min<uint32_t>(width - off, sizeof scratch);
+            std::memcpy(scratch, g_mem + pa + off, n);
+            std::memcpy(g_mem + pa + off, g_mem + pb + off, n);
+            std::memcpy(g_mem + pb + off, scratch, n);
+            off += n;
+        }
+    };
+    const auto sift_down = [&](uint32_t first, uint32_t last) {
+        uint32_t root = first;
+        while (uint64_t(root) * 2u + 1u <= last) {
+            uint32_t child = root * 2u + 1u;
+            if (child < last && less(child, child + 1u))
+                ++child;
+            if (!less(root, child))
+                break;
+            exchange(root, child);
+            root = child;
+        }
+    };
+    // Heapify bottom-up, then repeatedly promote the maximum to the end.
+    for (uint32_t first = count / 2u; first > 0u;) {
+        --first;
+        sift_down(first, count - 1u);
+    }
+    for (uint32_t last = count - 1u; last > 0u; --last) {
+        exchange(0u, last);
+        sift_down(0u, last - 1u);
+    }
+    set_eax(c, 0u);
+}
+
 void crt_wcsncpy(X86 *c) {
     const uint32_t dst = arg(c, 0);
     const uint32_t src = arg(c, 1);
@@ -3126,6 +3206,7 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "islower", ARGC_CDECL, crt_islower},
     {"MSVCR90.dll", "isupper", ARGC_CDECL, crt_isupper},
     {"MSVCR90.dll", "ispunct", ARGC_CDECL, crt_ispunct},
+    {"MSVCR90.dll", "atoi", ARGC_CDECL, crt_atoi},
     {"MSVCR90.dll", "atol", ARGC_CDECL, crt_atol},
     {"MSVCR90.dll", "strtoul", ARGC_CDECL, crt_strtoul},
     {"MSVCR90.dll", "strtol", ARGC_CDECL, crt_strtol},
@@ -3133,6 +3214,7 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "atof", ARGC_CDECL, crt_atof},
     {"MSVCR90.dll", "ceil", ARGC_CDECL, crt_ceil},
     {"MSVCR90.dll", "strtok", ARGC_CDECL, crt_strtok},
+    {"MSVCR90.dll", "qsort", ARGC_CDECL, crt_qsort},
     {"MSVCR90.dll", "wcsncmp", ARGC_CDECL, crt_wcsncmp},
     {"MSVCR90.dll", "strcspn", ARGC_CDECL, crt_strcspn},
     {"MSVCR90.dll", "localeconv", ARGC_CDECL, crt_localeconv},
