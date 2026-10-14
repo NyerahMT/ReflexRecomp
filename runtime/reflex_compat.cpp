@@ -1625,6 +1625,60 @@ void fmod_system_set_3d_settings(X86 *c) {
     set_eax(c, 0);
 }
 
+// FMOD Ex System methods use callee-cleaned x86 stack arguments, with the
+// object pointer in the first stack word. The headless FMOD compatibility
+// backend records spatial settings without promising audio playback.
+uint32_t g_fmod_listener_count = 1u;
+uint32_t g_fmod_listener_vectors[8][4][3] = {};
+
+void fmod_system_set_3d_num_listeners(X86 *c) {
+    // (this, int numlisteners) = two x86 stack words.
+    const uint32_t count = arg(c, 1);
+    if (count < 1u || count > 8u) {
+        set_eax(c, 1);
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_fmod_3d_mutex);
+    g_fmod_listener_count = count;
+    set_eax(c, 0);
+}
+
+void fmod_system_set_3d_listener_attributes(X86 *c) {
+    // (this, listener, position*, velocity*, forward*, up*) = six words.
+    const uint32_t index = arg(c, 1);
+    const uint32_t vectors[4] = {
+        arg(c, 2), arg(c, 3), arg(c, 4), arg(c, 5)
+    };
+    for (uint32_t ptr : vectors) {
+        // FMOD permits null vectors to mean "leave unchanged".
+        if (ptr && !gm_valid(ptr, 12u)) {
+            set_eax(c, 1);
+            return;
+        }
+    }
+    std::lock_guard<std::mutex> lock(g_fmod_3d_mutex);
+    if (index >= g_fmod_listener_count) {
+        set_eax(c, 1);
+        return;
+    }
+    for (uint32_t v = 0; v < 4u; ++v)
+        if (vectors[v])
+            for (uint32_t lane = 0; lane < 3u; ++lane)
+                g_fmod_listener_vectors[index][v][lane] = rd32(vectors[v] + lane * 4u);
+    set_eax(c, 0);
+}
+
+void fmod_system_set_reverb_ambient_properties(X86 *c) {
+    // (this, FMOD_REVERB_PROPERTIES*) = two words. A headless audio backend
+    // cannot apply actual reverb, but can accept valid startup configuration.
+    const uint32_t props = arg(c, 1);
+    if (props && !gm_valid(props, 4u)) {
+        set_eax(c, 1);
+        return;
+    }
+    set_eax(c, 0);
+}
+
 void fmod_system_get_3d_settings(X86 *c) {
     const uint32_t outputs[3] = {arg(c, 1), arg(c, 2), arg(c, 3)};
     for (const uint32_t ptr : outputs) {
@@ -2964,6 +3018,15 @@ const ImportShim k_reflex_shims[] = {
     {"fmodexL.dll",
      "?setAdvancedSettings@System@FMOD@@QAG?AW4FMOD_RESULT@@PAUFMOD_ADVANCEDSETTINGS@@@Z",
      2, fmod_ok},
+    {"fmodexL.dll",
+     "?set3DNumListeners@System@FMOD@@QAG?AW4FMOD_RESULT@@H@Z",
+     2, fmod_system_set_3d_num_listeners},
+    {"fmodexL.dll",
+     "?set3DListenerAttributes@System@FMOD@@QAG?AW4FMOD_RESULT@@HPBUFMOD_VECTOR@@000@Z",
+     6, fmod_system_set_3d_listener_attributes},
+    {"fmodexL.dll",
+     "?setReverbAmbientProperties@System@FMOD@@QAG?AW4FMOD_RESULT@@PAUFMOD_REVERB_PROPERTIES@@@Z",
+     2, fmod_system_set_reverb_ambient_properties},
     {"fmodexL.dll",
      "?set3DSettings@System@FMOD@@QAG?AW4FMOD_RESULT@@MMM@Z",
      4, fmod_system_set_3d_settings},
