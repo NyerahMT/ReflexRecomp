@@ -1,111 +1,81 @@
-# MX vs. ATV Reflex — Native iOS Recompilation
+# ReflexRecomp
 
-**The original Reflex. A new platform.**
+An experimental iOS port of **MX vs. ATV Reflex** (the original Windows PC version), using static x86 recompilation.
 
-[![Project status](https://img.shields.io/badge/status-active%20development-2563eb)](https://github.com/NyerahMT/ReflexRecomp/commits/main)
-[![Target](https://img.shields.io/badge/target-iOS%20%2F%20iPadOS-111827)](https://github.com/NyerahMT/ReflexRecomp)
-[![Architecture](https://img.shields.io/badge/architecture-ARM64-475569)](https://github.com/NyerahMT/ReflexRecomp)
+Reflex is a 32-bit Windows game. This project translates its original x86 code into C ahead of time, compiles it for ARM64, and implements the Windows functionality the game expects. The idea is to run the actual game on iPhone and iPad, not recreate it in another engine or stream it from a PC.
 
-**ReflexRecomp** is an experimental effort to bring the **Windows PC version of MX vs. ATV Reflex** to iPhone and iPad by statically recompiling its original 32-bit x86 game code into a native ARM64 application.
+The long-term target is a native iOS build that doesn't need a jailbreak, an x86 emulator, or JIT compilation.
 
-Not a remake. Not a mobile lookalike. The goal is to preserve the actual game—including the handling and systems that make Reflex feel like Reflex—while replacing the Windows-specific plumbing it depends on.
+## Status
 
-> **Current status:** Under active development. The native startup/runtime and original-asset loading path are being brought up, but **there is no publicly playable iOS build yet**.
+**Work in progress. Not playable yet.**
 
-## Why Reflex?
+The recompilation pipeline and native runtime are far enough along to execute original game code in automated startup tests. The current work is mostly about getting through initialization: Windows/CRT behavior, x86 calling conventions, original resource loading, audio interfaces, and Direct3D 9 compatibility.
 
-Reflex is more than another motocross game. Its rider-and-bike control, distinctive physics, terrain deformation, and sense of speed are exactly the things a faithful port should keep.
+The game **does not have a verified working main menu yet**, and there's no public IPA to install. Getting to a properly loaded menu is the next major milestone. Gameplay and on-device testing come after that.
 
-The aim is simple: **get the original experience running on modern Apple hardware without rewriting the game into something else.**
+### Progress
 
-### What this project is aiming for
+- [x] Identify and verify the target PC executable
+- [x] Set up the Ghidra / `recomp-kit` translation pipeline
+- [x] Execute translated original code with a native test runtime
+- [ ] Finish startup and original asset loading
+- [ ] Get the main menu loading and rendering correctly
+- [ ] Bring up gameplay, controls, sound, and graphics on iOS
+- [ ] Produce a playable device build
 
-- **Authentic gameplay:** Keep the game's original translated code, behavior, and feel wherever possible.
-- **Native Apple hardware support:** Compile ahead of time for ARM64 rather than relying on an x86 interpreter or just-in-time compiler.
-- **No jailbreak required:** Work within the constraints of ordinary iOS and iPadOS devices.
-- **A proper platform bridge:** Replace Windows API, graphics, audio, input, and filesystem dependencies with compatible native implementations.
-- **Faithful presentation:** Bring the original assets, interface, and rendering behavior forward—not redesign Reflex as a mobile game.
-
-These are **project goals**, not a list of features already working on-device.
+This is a rough milestone list, not a percentage-complete estimate. A successful CI build doesn't necessarily mean the game boots.
 
 ## How it works
 
-The project takes the original Windows executable through a static recompilation pipeline, then supplies native equivalents for the operating-system services the game expects.
-
 ```text
-Original Windows game (32-bit x86)
-             |
-      Ghidra analysis
-             |
-   recomp-kit translation
-       (x86 -> C)
-             |
-    Native ARM64 compile
-             |
-   Compatibility runtime
-    |          |         |
-  Win32      Audio     D3D9 -> Metal
-             |
-       iOS / iPadOS
+MXReflex.exe (32-bit Windows)
+            |
+     Ghidra analysis
+            |
+    recomp-kit (x86 -> C)
+            |
+      Native ARM64 build
+            |
+    Compatibility runtime
+    - Win32 / MSVCR
+    - Direct3D 9 -> Metal
+    - FMOD / audio
+    - Filesystem / input
+            |
+        iOS / iPadOS
 ```
 
-**Why static recompilation?** Instead of decoding x86 instructions while the game runs, translation happens ahead of time. That gives the project a route toward native execution on Apple silicon without requiring JIT, while retaining the original gameplay logic. It also makes compatibility work exceptionally detailed: calling conventions, memory behavior, DLL imports, and graphics semantics all have to be handled correctly.
+Static recompilation avoids having to interpret x86 instructions on the phone. It doesn't automatically solve the rest of the port, though: the translated code still expects the original Windows APIs, x86 ABI details, Direct3D behavior, and game data. Most of the work is making those assumptions hold on another platform.
 
-## Where things stand
+The goal is to leave the original gameplay code intact wherever possible, including Reflex's bike/rider handling and terrain systems.
 
-The project has progressed beyond a proof-of-concept pipeline into **original-game startup bring-up**:
+## Building / testing
 
-- Original x86 code is being translated and integrated with a native runtime.
-- Windows and C runtime compatibility work covers startup behavior, calling conventions, string/math functions, and other game imports.
-- Graphics and audio compatibility are being built out, including Direct3D-era helpers and FMOD interfaces.
-- Original UI, engine-dependency, and other resource packages are being identified and staged for startup.
-- Automated checks and build workflows are used to catch regressions as the port advances.
+There's no end-user build process or release package yet. The CI workflows are primarily for translation, compilation, runtime tests, and startup diagnostics.
 
-**The next big visible milestone is a reliably loaded, usable main menu.** After that come rendering correctness, input and audio integration, gameplay loading, and hands-on device testing. A successful compile or headless startup test is **not** the same thing as a playable port.
+- [Actions](https://github.com/NyerahMT/ReflexRecomp/actions) — builds and test results
+- [Commits](https://github.com/NyerahMT/ReflexRecomp/commits/main) — recent changes
 
-### Milestones
+The public repository does **not** contain the game executable, DLLs, or assets. The build input is kept separately and supplied to CI privately; you'll need legitimate game files to reproduce game-dependent work.
 
-| Milestone | Status |
-| --- | --- |
-| Establish executable analysis and recompilation workflow | In place |
-| Build and test native compatibility infrastructure | In progress |
-| Resolve original game startup and resource loading | In progress |
-| Reach a usable, correctly rendered main menu | Next major goal |
-| Load and control gameplay on-device | Not yet verified |
-| Release a playable iOS build | Not available |
-
-For current activity, see the [commit history](https://github.com/NyerahMT/ReflexRecomp/commits/main) and [GitHub Actions](https://github.com/NyerahMT/ReflexRecomp/actions). These are a better source for day-to-day changes than a running development log in this README.
-
-## Can I play it?
-
-**Not yet.** This repository is an engineering project, not a downloadable Reflex IPA. It does not currently provide a ready-to-install version of the game.
-
-When there is a meaningful on-device build to test, that milestone will be made clear here. Until then, the focus is getting the original game to initialize and operate correctly.
-
-## Repository and game files
-
-This public repository contains the work needed to analyze, translate, build, and test the port's code and compatibility layer. **It does not distribute the retail game, its executable, DLLs, or copyrighted assets.**
-
-Developer-owned game inputs are kept separately and supplied privately to the relevant build workflows. Public automation and source code can be inspected without shipping the original game's content.
-
-<details>
-<summary><strong>Technical reference: source executable and toolchain</strong></summary>
-
-The pipeline is built around a specific Windows executable so that analysis and translation remain reproducible.
+The current target executable is:
 
 ```text
-Executable:  MXReflex.exe
-SHA-256:     917d14e7ef7ce492b665fea7d0c87c9a39b549e2a43b09883d2a786988e7c02c
-Image base:  0x00400000
-Entry point: 0x009006a7
+File:       MXReflex.exe
+SHA-256:    917d14e7ef7ce492b665fea7d0c87c9a39b549e2a43b09883d2a786988e7c02c
+Image base: 0x00400000
+Entry:      0x009006a7
 ```
 
-The original scaffold pins `recomp-kit` at commit `eb32cc42623e0e9e868b9d27423a57d5a5cba56b` for reproducible translation. Check the current workflows for the authoritative build configuration.
+The project uses `recomp-kit` for x86-to-C translation. Refer to the workflows for the currently pinned toolchain and build configuration.
 
-</details>
+## Scope
 
-## About this project
+The priority is getting the PC game running correctly before adding anything new. That means startup, menus, track loading, rendering, input, sound, and actual gameplay in roughly that order.
 
-ReflexRecomp is an **unofficial fan-led technical project**. It is not affiliated with, endorsed by, or sponsored by the rights holders of *MX vs. ATV Reflex*. All game names, trademarks, and original game content belong to their respective owners.
+Mobile-specific UI changes and other enhancements can wait until there's a game worth testing.
 
-**The destination is Reflex running on iPhone and iPad. The point is getting there without losing what made Reflex special.**
+## Disclaimer
+
+This is an unofficial project and is not affiliated with the developers or publishers of *MX vs. ATV Reflex*. No copyrighted game binaries or assets are distributed here.
