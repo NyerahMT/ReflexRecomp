@@ -31,6 +31,18 @@ def test_extract_single_nested_original_filename(tmp_path):
 
 
 def test_rejects_duplicate_or_empty_private_assets_without_overwriting(tmp_path):
+def test_stage_authentic_ai_asset_from_private_archive(tmp_path):
+    archive = tmp_path / "Archive.zip"
+    output = tmp_path / "AI" / "UI_Compound-cb.tdf07"
+    make_zip(archive, [
+        ("AI/UI_Compound-cb.tdf07", b"original-test-resource"),
+        ("other/unrelated.dat", b"irrelevant"),
+    ])
+    assert mod.extract(archive, output.name, output)
+    assert output.read_bytes() == b"original-test-resource"
+    assert not mod.extract(archive, "Absent.tdf07", tmp_path / "AI" / "Absent.tdf07")
+
+
     archive = tmp_path / "Archive.3.zip"
     dest = tmp_path / "Music.dx9.package"
     dest.write_bytes(b"preserve-this")
@@ -67,3 +79,8 @@ def test_workflow_requires_original_asset_before_game_launch():
     assert '--name "$name"' in workflow
     assert "Archive.zip Archive.3.zip Archive.4.zip Archive.2.zip" in workflow
     assert '"$status" -ne 3' in workflow
+    assert 'AI/UI_Compound-cb.tdf07' in workflow
+    assert '--name "UI_Compound-cb.tdf07" --output "$ai_asset"' in workflow
+    assert 'if [[ "$ai_found" -eq 0 ]]' in workflow
+    assert workflow.index('ai_asset="$RUNNER_TEMP/reflex-game/AI/UI_Compound-cb.tdf07"') < workflow.index(
+        'rm -f "$RUNNER_TEMP/reflex-assets/Archive.3.zip"')
