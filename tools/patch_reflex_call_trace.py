@@ -91,7 +91,7 @@ def main():
                     "slot=%08x slot_valid=%d object=%08x object_valid=%d "
                     "vtable=%08x vtable_valid=%d method2=%08x "
                     "owner=%08x owner_vtable=%08x method94=%08x method9c=%08x "
-                    "arg0=%08x eax=%08x ecx=%08x edx=%08x\n",
+                    "arg0=%08x eax=%08x ecx=%08x edx=%08x\\n",
                     (unsigned long long)n, trace_ret, target,
                     slot, slot_ok, object, object_ok, vtable, vtable_ok,
                     release, owner, owner_vtable, owner_call94, owner_call9c,
