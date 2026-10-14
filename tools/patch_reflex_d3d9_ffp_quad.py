@@ -45,11 +45,34 @@ def patch_ffp_quad(kit: Path, runtime: Path) -> None:
     // reflex-ffp-quad-v1: only the known pretransformed textured format.
     const char *ffp_flag = std::getenv("REFLEX_FFP_QUAD");
     const bool shaderless = pl.vs.empty() && pl.ps.empty();
-    const bool fallback = shaderless && ffp_flag && ffp_flag[0] == '1' &&
-        ffp_flag[1] == '\\0' &&
+    // reflex-ffp-declaration-quad-v1: permit only the observed equivalent
+    // POSITIONT/FLOAT4 + TEXCOORD0/FLOAT2 declaration and exact byte stride.
+    // Never use an object ID as a stand-in for verified vertex semantics.
+    ComObj *ffp_decl = com_get(pl.declaration);
+    const uint32_t ffp_stride = d.inline_vertices ?
+        d.stream[0].stride : pl.stream[0].stride;
+    const bool declaration_quad = dev->d9_fvf_current == 0u &&
+        ffp_decl && ffp_decl->kind == K_D3D9DECL &&
+        reflex_ffp::supported_decl(ffp_decl->blob.data(),
+                                   ffp_decl->blob.size(), ffp_stride);
+    const bool fixed_function_quad =
         reflex_ffp::supported(dev->d9_fvf_current, pl.sampler_tex[0],
-                             pl.tss[0][1], pl.tss[0][2], pl.tss[0][3],
-                             pl.tss[0][4], pl.tss[0][5], pl.tss[1][1]);
+                              pl.tss[0][1], pl.tss[0][2], pl.tss[0][3],
+                              pl.tss[0][4], pl.tss[0][5], pl.tss[1][1]) ||
+        (declaration_quad &&
+         reflex_ffp::supported(0x00000104u, pl.sampler_tex[0],
+                              pl.tss[0][1], pl.tss[0][2], pl.tss[0][3],
+                              pl.tss[0][4], pl.tss[0][5], pl.tss[1][1]));
+    const bool fallback = shaderless && ffp_flag && ffp_flag[0] == '1' &&
+        ffp_flag[1] == '\\0' && fixed_function_quad;
+    if (fallback && declaration_quad) {
+        static std::atomic<unsigned long long> accepted_decl{0};
+        const unsigned long long accepted = accepted_decl.fetch_add(1) + 1;
+        if (accepted <= 8 || ((accepted & (accepted - 1)) == 0))
+            LOGW("[reflex-ffp] textured-decl n=%llu accepted=1 id=%u stride=%u "
+                 "tex0=%u target=%u", accepted, pl.declaration,
+                 ffp_stride, pl.sampler_tex[0], pl.color_target[0]);
+    }
     if (shaderless && ffp_flag && ffp_flag[0] == '1') {
         static std::atomic<unsigned long long> attempts{0};
         const unsigned long long n = attempts.fetch_add(1) + 1;
