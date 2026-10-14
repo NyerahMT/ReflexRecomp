@@ -91,12 +91,21 @@ def main():
                     "slot=%08x slot_valid=%d object=%08x object_valid=%d "
                     "vtable=%08x vtable_valid=%d method2=%08x "
                     "owner=%08x owner_vtable=%08x method94=%08x method9c=%08x "
-                    "arg0=%08x eax=%08x ecx=%08x edx=%08x\\n",
+                    "arg0=%08x eax=%08x ecx=%08x edx=%08x "
+                    "owner_slot=%08x owner_slot_value=%08x slot_minus4=%08x "
+                    "esi=%08x ebp=%08x esp=%08x\\n",
                     (unsigned long long)n, trace_ret, target,
                     slot, slot_ok, object, object_ok, vtable, vtable_ok,
                     release, owner, owner_vtable, owner_call94, owner_call9c,
                     arg_ok ? rd32(trace_esp + 4u) : 0xffffffffu,
-                    c->r[R_EAX], c->r[R_ECX], c->r[R_EDX]);
+                    c->r[R_EAX], c->r[R_ECX], c->r[R_EDX],
+                    owner_ok && (uint64_t)owner + 0x20u <= GUEST_SIZE
+                        ? owner + 0x1cu : 0u,
+                    owner_ok && (uint64_t)owner + 0x20u <= GUEST_SIZE
+                        ? rd32(owner + 0x1cu) : 0xffffffffu,
+                    slot >= 0x10004u && (uint64_t)slot <= GUEST_SIZE
+                        ? rd32(slot - 4u) : 0xffffffffu,
+                    c->r[R_ESI], c->r[R_EBP], trace_esp);
         }
     }
 
