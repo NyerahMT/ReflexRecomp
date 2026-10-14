@@ -91,6 +91,19 @@ int main() {
     assert(rd16(356u) == 0xddddu);
 
     put_w(500u, "abca");
+    // UTF-16 wcsncmp compares count *code units*, not host wchar_t bytes.
+    put_w(1000u, "Alpha");
+    put_w(1100u, "Alphb");
+    assert(call3(crt_wcsncmp, 1000u, 1100u, 4u) == 0u);
+    assert(static_cast<int32_t>(call3(crt_wcsncmp, 1000u, 1100u, 5u)) < 0);
+    assert(static_cast<int32_t>(call3(crt_wcsncmp, 1100u, 1000u, 5u)) > 0);
+    assert(call3(crt_wcsncmp, 1000u, 1100u, 0u) == 0u);
+    put_w(1150u, "Alpha");
+    assert(call3(crt_wcsncmp, 1000u, 1150u, 64u) == 0u);
+    wr16(1200u, 0x8000u); wr16(1202u, 0u);
+    wr16(1250u, 0x7fffu); wr16(1252u, 0u);
+    assert(static_cast<int32_t>(call3(crt_wcsncmp, 1200u, 1250u, 2u)) > 0);
+    assert(static_cast<int32_t>(call3(crt_wcsncmp, 0u, 1250u, 1u)) < 0);
     assert(call3(crt_wcsrchr, 500u, 'a') == 506u);
     assert(call3(crt_wcsrchr, 500u, 0u) == 508u);
     assert(call3(crt_wcsrchr, 500u, 'z') == 0u);
