@@ -655,6 +655,18 @@ void crt_libm_sse2_exp(X86 *c) {
     xmm_set_f64(c, 0, std::exp(xmm_f64(c, 0)));
 }
 
+// MSVCR90 32-bit SSE2 libm entry points use XMM0 for the first double,
+// XMM1 for the second; the result overwrites low XMM0 (upper bits preserved).
+void crt_libm_sse2_acos(X86 *c) {
+    xmm_set_f64(c, 0, std::acos(xmm_f64(c, 0)));
+}
+
+void crt_libm_sse2_pow(X86 *c) {
+    const double base = xmm_f64(c, 0);
+    const double exponent = xmm_f64(c, 1);
+    xmm_set_f64(c, 0, std::pow(base, exponent));
+}
+
 void crt_libm_sse2_expf(X86 *c) {
     xmm_set_f32(c, 0, std::exp(xmm_f32(c, 0)));
 }
@@ -987,6 +999,73 @@ void crt_strtod(X86 *c) {
     if (end_out && gm_valid(end_out, 4))
         wr32(end_out, src + static_cast<uint32_t>(std::min(consumed, data.size())));
     fpush(c, result);
+}
+
+// MSVCR90!ceil(double): 32-bit cdecl, one 8-byte stack double,
+// x87 ST(0) return. Do not treat this as an SSE2 register intrinsic.
+void crt_ceil(X86 *c) {
+    const uint32_t esp = c->r[R_ESP];
+    if (esp >= GUEST_SIZE || !gm_valid(esp + 4u, 8u)) {
+        fpush(c, NAN);
+        return;
+    }
+    fpush(c, std::ceil(rdf64(esp + 4u)));
+}
+
+// Windows strtok mutates the guest input, and each calling thread has a
+// distinct continuation. Never expose host pointers or use host strtok's
+// shared static state; preserve byte-for-byte delimiters in guest memory.
+void crt_strtok(X86 *c) {
+    const uint32_t first = arg(c, 0), delims = arg(c, 1);
+    static thread_local uint32_t continuation = 0;
+    if (!delims || !gm_valid(delims, 1u)) {
+        set_eax(c, 0);
+        return;
+    }
+    const std::string separators = gm_str(delims, 32768u);
+    uint32_t current = first ? first : continuation;
+    if (first) continuation = first;
+    if (!current || !gm_valid(current, 1u)) {
+        continuation = 0;
+        set_eax(c, 0);
+        return;
+    }
+    auto separator = [&](uint8_t v) {
+        return separators.find(static_cast<char>(v)) != std::string::npos;
+    };
+    // Bound reads within guest arena. A bad/un-terminated input must never
+    // escape its mapped region or leave a pointer to non-guest memory.
+    for (uint32_t n = 0; n < 32768u && gm_valid(current, 1u); ++n, ++current) {
+        const uint8_t ch = rd8(current);
+        if (!ch) {
+            continuation = 0;
+            set_eax(c, 0);
+            return;
+        }
+        if (!separator(ch)) break;
+    }
+    if (!gm_valid(current, 1u) || !rd8(current) || separator(rd8(current))) {
+        continuation = 0;
+        set_eax(c, 0);
+        return;
+    }
+    const uint32_t token = current;
+    for (uint32_t n = 0; n < 32768u && gm_valid(current, 1u); ++n, ++current) {
+        const uint8_t ch = rd8(current);
+        if (!ch) {
+            continuation = 0;
+            set_eax(c, token);
+            return;
+        }
+        if (separator(ch)) {
+            wr8(current, 0);
+            continuation = current + 1u;
+            set_eax(c, token);
+            return;
+        }
+    }
+    continuation = 0;
+    set_eax(c, 0);
 }
 
 void crt_atof(X86 *c) {
@@ -2948,6 +3027,8 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "strcpy_s", ARGC_CDECL, crt_strcpy_s},
     {"MSVCR90.dll", "_strlwr_s", ARGC_CDECL, crt_strlwr_s},
     {"MSVCR90.dll", "_copysign", ARGC_CDECL, crt_copysign},
+    {"MSVCR90.dll", "__libm_sse2_acos", ARGC_CDECL, crt_libm_sse2_acos},
+    {"MSVCR90.dll", "__libm_sse2_pow", ARGC_CDECL, crt_libm_sse2_pow},
     {"MSVCR90.dll", "__libm_sse2_exp", ARGC_CDECL, crt_libm_sse2_exp},
     {"MSVCR90.dll", "__libm_sse2_expf", ARGC_CDECL, crt_libm_sse2_expf},
     {"MSVCR90.dll", "__RTDynamicCast", ARGC_CDECL, crt_rt_dynamic_cast},
@@ -2973,6 +3054,8 @@ const ImportShim k_reflex_shims[] = {
     {"MSVCR90.dll", "strtol", ARGC_CDECL, crt_strtol},
     {"MSVCR90.dll", "strtod", ARGC_CDECL, crt_strtod},
     {"MSVCR90.dll", "atof", ARGC_CDECL, crt_atof},
+    {"MSVCR90.dll", "ceil", ARGC_CDECL, crt_ceil},
+    {"MSVCR90.dll", "strtok", ARGC_CDECL, crt_strtok},
     {"MSVCR90.dll", "strcspn", ARGC_CDECL, crt_strcspn},
     {"MSVCR90.dll", "localeconv", ARGC_CDECL, crt_localeconv},
 
