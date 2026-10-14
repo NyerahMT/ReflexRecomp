@@ -59,6 +59,34 @@ def patch_ffp_quad(kit: Path, runtime: Path) -> None:
                  n, fallback ? 1u : 0u, dev->d9_fvf_current,
                  pl.sampler_tex[0], pl.tss[0][1], pl.tss[0][2],
                  pl.tss[0][3], pl.tss[0][4], pl.tss[0][5], pl.tss[1][1]);
+        // reflex-ffp-decl-profile-v1: describe only the bounded, unhandled
+        // shaderless shape. Never substitute a shader on an unknown layout.
+        if (!fallback) {
+            static std::atomic<unsigned long long> declined{0};
+            const unsigned long long m = declined.fetch_add(1) + 1;
+            if (m <= 2 || m == 32) {
+                ComObj *decl = com_get(pl.declaration);
+                const bool valid_decl = decl && decl->kind == K_D3D9DECL;
+                const size_t bytes = valid_decl ? decl->blob.size() : 0u;
+                LOGW("[reflex-ffp] declined-decl n=%llu id=%u bytes=%zu tex0=%u "
+                     "stream0_stride=%u inline_stride=%u target=%u",
+                     m, pl.declaration, bytes, pl.sampler_tex[0],
+                     pl.stream[0].stride, d.stream[0].stride, pl.color_target[0]);
+                if (valid_decl) {
+                    const size_t limit = std::min<size_t>(bytes, 128u);
+                    for (size_t off = 0; off + 8u <= limit; off += 8u) {
+                        const uint8_t *e = decl->blob.data() + off;
+                        const uint32_t stream = uint32_t(e[0]) | (uint32_t(e[1]) << 8u);
+                        const uint32_t offset = uint32_t(e[2]) | (uint32_t(e[3]) << 8u);
+                        if (stream == 0xffu) break; // D3DDECL_END
+                        LOGW("[reflex-ffp] decl-element n=%llu idx=%zu stream=%u "
+                             "offset=%u type=%u method=%u usage=%u usage_index=%u",
+                             m, off / 8u, stream, offset,
+                             e[4], e[5], e[6], e[7]);
+                    }
+                }
+            }
+        }
     }
     if ((pl.vs.empty() || pl.ps.empty()) && !fallback) {
         static std::atomic<unsigned long long> skips{0};''',
