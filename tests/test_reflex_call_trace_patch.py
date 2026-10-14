@@ -106,3 +106,13 @@ def test_guest_stream_pointer_watch_scoped_to_extended_run_only():
     assert any("RECOMP_WATCH_FRAME=1" in line and
                "RECOMP_WATCH=01ce86b4:4" in env_lines[i + 1]
                for i, line in enumerate(env_lines[:-1]))
+
+
+def test_post_atoi_and_seh_windows_remain_bounded_diagnostic_only():
+    workflow = (SCRIPT.parent.parent / ".github" / "workflows" / "fast-iterate.yml").read_text()
+    assert "--start 0x0079a5e0 --end 0x0079a660" in workflow
+    assert "--start 0x00797300 --end 0x00797370" in workflow
+    assert "post-atoi-null-call-asm-window.txt" in workflow
+    assert "post-atoi-seh-crash-asm-window.txt" in workflow
+    assert workflow.index("post-atoi-null-call-asm-window.txt") < workflow.index(
+        "      - name: Audit cached translation opcode coverage")
