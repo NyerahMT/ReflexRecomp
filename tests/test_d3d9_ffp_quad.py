@@ -152,6 +152,12 @@ static void gpu_draw(ComObj *dev, HostD9Draw &d) {
     changed = target.read_text()
     assert changed.count(patch.MARKER) == 1
     assert changed.count("[reflex-ffp] textured-fvf") == 1
+    assert changed.count("[reflex-ffp] declined-decl") == 1
+    assert changed.count("[reflex-ffp] decl-element") == 1
+    assert "if (!fallback) {" in changed
+    assert "m <= 2 || m == 32" in changed
+    assert "std::min<size_t>(bytes, 128u)" in changed
+    assert "if (stream == 0xffu) break;" in changed
     assert "d.vs = vs_bytes.data();" in changed
     assert "std::getenv" in changed
     assert patch.patch_ffp_quad(kit, ROOT / "runtime") is None
