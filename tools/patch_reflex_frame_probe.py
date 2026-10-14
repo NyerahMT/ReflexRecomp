@@ -65,7 +65,7 @@ def patch_frame_probe(kit: Path, runtime: Path) -> None:
                 '''        host_d9_present(bb->id, bb->width, bb->height);
         ddraw_external_present_end();''',
                 '''        host_d9_present(bb->id, bb->width, bb->height);
-        // Sample first 2 and powers of two up to 256: 9 bounded readbacks.
+        // Sample first 2 and powers of two to 16384: 15 bounded readbacks.
         const char *probe = std::getenv("REFLEX_FRAME_PROBE");
         if (probe && probe[0] == '1' && reflex_d3d9::should_readback(n) &&
             bb->width && bb->height &&
@@ -80,9 +80,10 @@ def patch_frame_probe(kit: Path, runtime: Path) -> None:
                 LOGW("[reflex-frame] rgb n=%llu size=%ux%u sampled=%u lit=%u hash=%016llx",
                      n, w, h, st.sampled, st.nonblack,
                      static_cast<unsigned long long>(st.hash));
-                // Save at most four full readbacks; logs retain the other
-                // sampled frames. Actions uploads build/logs/ as an artifact.
-                if (n == 1u || n == 8u || n == 64u || n == 256u) {
+                // Save early and late real framebuffer states; at most six
+                // captures, to reveal shader fixes after loading begins.
+                if (n == 1u || n == 8u || n == 64u || n == 256u ||
+                    n == 4096u || n == 16384u) {
                     char filename[80];
                     std::snprintf(filename, sizeof filename,
                                   "build/logs/reflex-frame-%04llu.ppm", n);

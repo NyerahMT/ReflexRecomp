@@ -32,6 +32,25 @@ int main() {
     assert(!reflex_ffp::supported(0x144, 17, 4, 2, 1, 2, 2, 1));
     assert(!reflex_ffp::supported(0x104, 17, 2, 2, 1, 2, 2, 1));
     assert(!reflex_ffp::supported(0x104, 17, 4, 2, 1, 2, 2, 4));
+    // From original-game run 171: 24-byte D3DVERTEXELEMENT9 record.
+    uint8_t decl[24] = {
+        0, 0, 0, 0, 3, 0, 9, 0,       // stream0 positionT float4 @0
+        0, 0, 16, 0, 1, 0, 5, 0,      // stream0 texcoord0 float2 @16
+        255, 0, 0, 0, 17, 0, 0, 0,    // D3DDECL_END
+    };
+    assert(reflex_ffp::supported_decl(decl, sizeof(decl), 24));
+    assert(!reflex_ffp::supported_decl(nullptr, sizeof(decl), 24));
+    assert(!reflex_ffp::supported_decl(decl, sizeof(decl) - 8, 24));
+    assert(!reflex_ffp::supported_decl(decl, sizeof(decl), 0));
+    assert(!reflex_ffp::supported_decl(decl, sizeof(decl), 20));
+    assert(!reflex_ffp::supported_decl(decl, sizeof(decl), 28));
+    // Refuse superficially similar but semantically different vertex formats.
+    for (unsigned index : {0u, 2u, 4u, 5u, 6u, 7u, 10u, 12u, 14u, 20u, 23u}) {
+        decl[index] ^= 1u;
+        assert(!reflex_ffp::supported_decl(decl, sizeof(decl), 24));
+        decl[index] ^= 1u;
+        assert(reflex_ffp::supported_decl(decl, sizeof(decl), 24));
+    }
     float m[2][4] = {};
     assert(reflex_ffp::clip_constants(0, 0, 1280, 720, m));
     assert(std::fabs(m[0][0] - 2.f / 1280.f) < 0.00001f);
@@ -152,6 +171,12 @@ static void gpu_draw(ComObj *dev, HostD9Draw &d) {
     changed = target.read_text()
     assert changed.count(patch.MARKER) == 1
     assert changed.count("[reflex-ffp] textured-fvf") == 1
+    assert changed.count("reflex-ffp-declaration-quad-v1") == 1
+    assert changed.count("[reflex-ffp] textured-decl") == 1
+    assert "reflex_ffp::supported_decl(ffp_decl->blob.data()" in changed
+    assert "d.inline_vertices ?" in changed
+    assert "ffp_flag[1]" in changed
+    assert "pl.vs.empty() && pl.ps.empty()" in changed
     assert changed.count("[reflex-ffp] declined-decl") == 1
     assert changed.count("[reflex-ffp] decl-element") == 1
     assert "if (!fallback) {" in changed
