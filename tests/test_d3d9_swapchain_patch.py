@@ -128,3 +128,114 @@ def test_render_target_patch_rejects_unknown_pinned_kit_revision(tmp_path):
     with pytest.raises(SystemExit, match="expected exactly one patch anchor"):
         mod.patch_render_target(d3d)
     assert d3d.read_text() == "D9_STUB(GetTexture, 3)\n"
+
+
+GET_RT_HARNESS_BEFORE = r"""
+#include <cassert>
+#include <cstdint>
+
+static constexpr uint32_t D3DERR_INVALIDCALL = 0x8876086cu;
+static constexpr uint32_t E_OUTOFMEMORY = 0x8007000eu;
+static constexpr uint32_t D3D_OK9 = 0u;
+static constexpr uint32_t K_D3D9SURFACE = 1u;
+static constexpr uint32_t IF_D3DSURFACE9 = 1u;
+
+struct ComObj {
+    uint32_t id = 0u;
+    uint32_t kind = 0u;
+    uint32_t refs = 1u;
+    uint32_t render_target = 0u;
+};
+struct X86 {
+    ComObj *device = nullptr;
+    uint32_t args[3] = {};
+    uint32_t result = 0xffffffffu;
+};
+struct D9Pipeline {
+    uint32_t color_target[4] = {};
+};
+static ComObj device{1u, 0u, 1u, 0u};
+static ComObj surface{2u, K_D3D9SURFACE, 1u, 0u};
+static D9Pipeline pipeline;
+static uint32_t guest_output = 0xffffffffu;
+
+uint32_t arg(X86 *c, unsigned idx) { return c->args[idx]; }
+bool gm_fits(uint32_t out, uint32_t bytes) { return out == 256u && bytes == 4u; }
+ComObj *this_device9(X86 *c) { return c->device; }
+ComObj *com_get(uint32_t id) { return id == 2u ? &surface : nullptr; }
+D9Pipeline &d9_pipeline(uint32_t) { return pipeline; }
+ComObj *device_backbuffer(ComObj *dev) {
+    dev->render_target = surface.id;
+    return &surface;
+}
+uint32_t com_view(ComObj *o, uint32_t iface) {
+    return o == &surface && iface == IF_D3DSURFACE9 ? 0x1002u : 0u;
+}
+void com_addref(ComObj *o) { ++o->refs; }
+void com_out_ptr(uint32_t addr, uint32_t value) {
+    assert(addr == 256u);
+    guest_output = value;
+}
+void com_ret(X86 *c, uint32_t result) { c->result = result; }
+void log_once(const char *, const char *) {}
+"""
+
+GET_RT_HARNESS_AFTER = r"""
+int main() {
+    X86 c{};
+    c.device = &device;
+    c.args[1] = 0u;
+    c.args[2] = 256u;
+    Dev_GetRenderTarget(&c);
+    assert(c.result == D3D_OK9);
+    assert(guest_output == 0x1002u);
+    assert(surface.refs == 2u);
+    assert(pipeline.color_target[0] == 2u);
+    assert(device.render_target == 2u);
+
+    guest_output = 0xffffffffu;
+    c.args[1] = 1u;
+    Dev_GetRenderTarget(&c);
+    assert(c.result == D3DERR_INVALIDCALL);
+    assert(guest_output == 0u);
+    assert(surface.refs == 2u);
+
+    pipeline.color_target[1] = surface.id;
+    Dev_GetRenderTarget(&c);
+    assert(c.result == D3D_OK9);
+    assert(guest_output == 0x1002u);
+    assert(surface.refs == 3u);
+
+    c.args[1] = 4u;
+    Dev_GetRenderTarget(&c);
+    assert(c.result == D3DERR_INVALIDCALL);
+    assert(surface.refs == 3u);
+
+    c.args[1] = 0u;
+    c.args[2] = 257u;
+    Dev_GetRenderTarget(&c);
+    assert(c.result == D3DERR_INVALIDCALL);
+    assert(surface.refs == 3u);
+
+    c.args[2] = 256u;
+    c.device = nullptr;
+    Dev_GetRenderTarget(&c);
+    assert(c.result == D3DERR_INVALIDCALL);
+    assert(surface.refs == 3u);
+}
+"""
+
+
+def test_get_render_target_native_surface_contract(tmp_path):
+    compiler = shutil.which("c++") or shutil.which("clang++") or shutil.which("g++")
+    if not compiler:
+        pytest.skip("C++ compiler unavailable")
+    source = tmp_path / "get_render_target.cpp"
+    executable = tmp_path / "get_render_target"
+    source.write_text(GET_RT_HARNESS_BEFORE + mod.GET_RENDER_TARGET_IMPL + GET_RT_HARNESS_AFTER)
+    subprocess.run(
+        [compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror",
+         str(source), "-o", str(executable)],
+        check=True, capture_output=True, text=True,
+    )
+    subprocess.run([str(executable)], check=True, capture_output=True, text=True)
