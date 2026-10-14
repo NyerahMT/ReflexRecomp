@@ -414,6 +414,18 @@ jobs:
             --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
             --start 0x0080fbe0 --end 0x0080fc70 \
             --output build/logs/post-fmod-null-call-asm-window.txt
+          # At 0079a627 the original game still called a nil target just
+          # after the unsupported MSVCR90!atoi import (runtime run 164).
+          # Capture only bounded original code windows to distinguish caller
+          # object state from a secondary CRT or SEH fault.
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --start 0x0079a5e0 --end 0x0079a660 \
+            --output build/logs/post-atoi-null-call-asm-window.txt
+          python3 tools/inspect_reflex_loader_asm.py \
+            --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
+            --start 0x00797300 --end 0x00797370 \
+            --output build/logs/post-atoi-seh-crash-asm-window.txt
 
       - name: Audit cached translation opcode coverage
         run: |
