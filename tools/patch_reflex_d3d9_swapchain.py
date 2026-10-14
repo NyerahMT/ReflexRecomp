@@ -323,6 +323,60 @@ static const ComMethod g_swapchain9[] = {
     )
 
 
+
+GET_RENDER_TARGET_IMPL = r'''// reflex-d3d9-getrender-target-v1
+// The pinned D3D9 stub returned D3D_OK without writing ppRenderTarget.
+// Reflex later dereferenced that null pointer at guest return 0079a627.
+// Read back the actual bound target, with an owning COM reference.
+void Dev_GetRenderTarget(X86 *c) {
+    ComObj *dev = this_device9(c);
+    const uint32_t index = arg(c, 1);
+    const uint32_t out = arg(c, 2);
+    if (!dev || index >= 4u || !out || !gm_fits(out, 4)) {
+        com_ret(c, D3DERR_INVALIDCALL);
+        return;
+    }
+    com_out_ptr(out, 0);
+    D9Pipeline &pl = d9_pipeline(dev->id);
+    ComObj *surface = com_get(pl.color_target[index]);
+
+    // GetRenderTarget(0) must still expose the default back buffer, even
+    // before the game has called SetRenderTarget. Do not invent a target for
+    // additional slots; only index 0 is guaranteed to be bound by D3D9.
+    if (index == 0u && (!surface || surface->kind != K_D3D9SURFACE)) {
+        surface = com_get(dev->render_target);
+        if (!surface || surface->kind != K_D3D9SURFACE)
+            surface = device_backbuffer(dev);
+        if (surface)
+            pl.color_target[0] = surface->id;
+    }
+    if (!surface || surface->kind != K_D3D9SURFACE) {
+        com_ret(c, D3DERR_INVALIDCALL);
+        return;
+    }
+    const uint32_t view = com_view(surface, IF_D3DSURFACE9);
+    if (!view) {
+        com_ret(c, E_OUTOFMEMORY);
+        return;
+    }
+    com_addref(surface);  // COM GetRenderTarget returns an owned interface ref.
+    com_out_ptr(out, view);
+    log_once("d3d9.getrt.implemented",
+             "d3d9: GetRenderTarget returned a reference-counted surface");
+    com_ret(c, D3D_OK9);
+}
+'''
+
+
+def patch_render_target(d3d: Path) -> None:
+    replace_once(
+        d3d,
+        "D9_STUB(GetRenderTarget, 3)\n",
+        GET_RENDER_TARGET_IMPL + "\n",
+        "reflex-d3d9-getrender-target-v1",
+    )
+
+
 def main() -> None:
     com = KIT / "dx" / "com.h"
     d3d = KIT / "dx" / "d3d9.cpp"
@@ -330,7 +384,8 @@ def main() -> None:
         raise SystemExit("kit/ is missing the pinned D3D9 runtime")
     patch_com_header(com)
     patch_d3d9(d3d)
-    print("Applied Reflex D3D9 swap-chain COM patch")
+    patch_render_target(d3d)
+    print("Applied Reflex D3D9 swap-chain and render-target COM patch")
 
 
 if __name__ == "__main__":
