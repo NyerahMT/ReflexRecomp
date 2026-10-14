@@ -30,10 +30,11 @@ int main(int argc, char **argv) {
     pixels[0] = 255;
     assert(reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, &s));
     assert(s.nonblack == 1 && s.hash != old);
-    const uint64_t sampled[] = {1, 2, 4, 8, 16, 32, 64, 128, 256};
+    const uint64_t sampled[] = {1, 2, 4, 8, 16, 32, 64, 128, 256,
+                                512, 1024, 2048, 4096, 8192, 16384};
     for (uint64_t n : sampled)
         assert(reflex_d3d9::should_readback(n));
-    const uint64_t skipped[] = {0, 3, 5, 7, 9, 255, 257, 512, 65536};
+    const uint64_t skipped[] = {0, 3, 5, 7, 9, 255, 257, 16383, 16385, 32768, 65536};
     for (uint64_t n : skipped)
         assert(!reflex_d3d9::should_readback(n));
     assert(!reflex_d3d9::frame_stats(pixels.data(), pixels.size()-1, 10, 10, &s));
@@ -76,6 +77,7 @@ def test_pinned_probe_patch_idempotent_and_safe(tmp_path):
     assert current.count(patch.MARKER) == 1
     assert current.count("[reflex-frame] shaderless-skip") == 1
     assert current.count("[reflex-frame] present") == 1
+    assert "n == 4096u || n == 16384u" in current
     patch.patch_frame_probe(kit, ROOT / "runtime")
     assert target.read_text() == current
     wrong = original.read_text().replace(
