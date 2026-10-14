@@ -30,7 +30,6 @@ def test_extract_single_nested_original_filename(tmp_path):
                            tmp_path / "NotThere.package")
 
 
-def test_rejects_duplicate_or_empty_private_assets_without_overwriting(tmp_path):
 def test_stage_authentic_ai_asset_from_private_archive(tmp_path):
     archive = tmp_path / "Archive.zip"
     output = tmp_path / "AI" / "UI_Compound-cb.tdf07"
@@ -43,6 +42,7 @@ def test_stage_authentic_ai_asset_from_private_archive(tmp_path):
     assert not mod.extract(archive, "Absent.tdf07", tmp_path / "AI" / "Absent.tdf07")
 
 
+def test_rejects_duplicate_or_empty_private_assets_without_overwriting(tmp_path):
     archive = tmp_path / "Archive.3.zip"
     dest = tmp_path / "Music.dx9.package"
     dest.write_bytes(b"preserve-this")
