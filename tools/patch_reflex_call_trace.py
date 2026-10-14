@@ -54,6 +54,52 @@ def main():
         }
     }
 
+    // reflex-post-loader-vcall-v1: the original 0079a60d callback precedes
+    // a virtual slot-2 (IUnknown-style Release) call at 0079a625. Capture
+    // the slot, object, vtable and actual function target on both sides of
+    // the preceding callback. Do not repair a missing vtable with a fake target.
+    if (trace_ret == 0x0079a61du || trace_ret == 0x0079a627u ||
+        trace_ret == 0x0079a63fu) {
+        static uint64_t post_loader_calls = 0u;
+        const uint64_t n = __atomic_add_fetch(
+            &post_loader_calls, 1u, __ATOMIC_RELAXED);
+        if (n <= 8u || (n & (n - 1u)) == 0u) {
+            const uint32_t slot = c->r[R_EBX];
+            const int slot_ok = slot >= 0x10000u &&
+                (uint64_t)slot + 4u <= GUEST_SIZE;
+            const uint32_t object = slot_ok ? rd32(slot) : 0u;
+            const int object_ok = object >= 0x10000u &&
+                (uint64_t)object + 4u <= GUEST_SIZE;
+            const uint32_t vtable = object_ok ? rd32(object) : 0u;
+            const int vtable_ok = vtable >= 0x10000u &&
+                (uint64_t)vtable + 12u <= GUEST_SIZE;
+            const uint32_t release = vtable_ok ? rd32(vtable + 8u) : 0u;
+            const uint32_t owner = c->r[R_EDI];
+            const int owner_ok = owner >= 0x10000u &&
+                (uint64_t)owner + 4u <= GUEST_SIZE;
+            const uint32_t owner_vtable = owner_ok ? rd32(owner) : 0u;
+            const int owner_vtable_ok = owner_vtable >= 0x10000u &&
+                (uint64_t)owner_vtable + 0xa0u <= GUEST_SIZE;
+            const uint32_t owner_call94 = owner_vtable_ok
+                ? rd32(owner_vtable + 0x94u) : 0u;
+            const uint32_t owner_call9c = owner_vtable_ok
+                ? rd32(owner_vtable + 0x9cu) : 0u;
+            const int arg_ok = trace_esp >= 0x10000u &&
+                (uint64_t)trace_esp + 8u <= GUEST_SIZE;
+            fprintf(stderr,
+                    "[reflex-post-loader-vcall] n=%llu ret=%08x target=%08x "
+                    "slot=%08x slot_valid=%d object=%08x object_valid=%d "
+                    "vtable=%08x vtable_valid=%d method2=%08x "
+                    "owner=%08x owner_vtable=%08x method94=%08x method9c=%08x "
+                    "arg0=%08x eax=%08x ecx=%08x edx=%08x\\n",
+                    (unsigned long long)n, trace_ret, target,
+                    slot, slot_ok, object, object_ok, vtable, vtable_ok,
+                    release, owner, owner_vtable, owner_call94, owner_call9c,
+                    arg_ok ? rd32(trace_esp + 4u) : 0xffffffffu,
+                    c->r[R_EAX], c->r[R_ECX], c->r[R_EDX]);
+        }
+    }
+
     // reflex-finalizer-vcall-v1: distinguish the two indirect resource
     // finalizer lookups from the early exits in original 00543cd0.
     // 00543d68: resource availability query; 00543d86: resource-load call.

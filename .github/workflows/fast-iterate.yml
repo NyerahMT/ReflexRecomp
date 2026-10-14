@@ -256,6 +256,35 @@ jobs:
             --stage --report build/logs/reflex-database-asset-inventory.json
           df -h "$RUNNER_TEMP" || true
 
+          # The first confirmed fopen failure immediately before the
+          # 0079a627 null vcall is AI/UI_Compound-cb.tdf07 (run 167).
+          # Look for the exact original asset in the same private archives.
+          # This may be an optional runtime-generated file; absence is a
+          # diagnostic, not proof of causation or a reason to synthesize it.
+          ai_asset="$RUNNER_TEMP/reflex-game/AI/UI_Compound-cb.tdf07"
+          if [[ -s "$ai_asset" ]]; then
+            echo "Original AI/UI_Compound-cb.tdf07 already present"
+          else
+            ai_found=0
+            for archive in Archive.zip Archive.2.zip Archive.3.zip Archive.4.zip; do
+              if python3 tools/stage_reflex_release_asset.py \
+                  --archive "$RUNNER_TEMP/reflex-assets/$archive" \
+                  --name "UI_Compound-cb.tdf07" --output "$ai_asset"; then
+                ai_found=1
+                break
+              else
+                status=$?
+                if [[ "$status" -ne 3 ]]; then
+                  echo "::error::Ambiguous or invalid original AI file in $archive"
+                  exit "$status"
+                fi
+              fi
+            done
+            if [[ "$ai_found" -eq 0 ]]; then
+              echo "::notice::AI/UI_Compound-cb.tdf07 not present in available original archives; checking whether this lookup is optional"
+            fi
+          fi
+
           # Only extract the referenced originals; clean up the compressed
           # private archives to avoid disk exhaustion during compilation.
           rm -f "$RUNNER_TEMP/reflex-assets/Archive.3.zip" \

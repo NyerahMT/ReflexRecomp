@@ -27,6 +27,13 @@ def test_virtual_lookup_trace_uses_c_escaped_newline(tmp_path):
         generated = table.read_text()
         assert '[reflex-ui-lookup]' in generated
         assert '[reflex-worker-null]' in generated
+        assert '[reflex-post-loader-vcall]' in generated
+        assert 'trace_ret == 0x0079a61du || trace_ret == 0x0079a627u' in generated
+        assert 'trace_ret == 0x0079a63fu' in generated
+        assert 'const uint32_t object = slot_ok ? rd32(slot) : 0u;' in generated
+        assert 'const uint32_t release = vtable_ok ? rd32(vtable + 8u) : 0u;' in generated
+        assert 'method94=%08x method9c=%08x' in generated
+        assert 'arg_ok ? rd32(trace_esp + 4u) : 0xffffffffu' in generated
         assert 'trace_ret == 0x008065b9u' in generated
         assert 'trace_ret == 0x008065b9u || trace_ret == 0x008067fdu' in generated
         assert 'trace_ret == 0x0080fc3cu' in generated
