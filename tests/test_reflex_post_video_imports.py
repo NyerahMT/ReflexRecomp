@@ -188,3 +188,45 @@ def test_fmod_eventsystem_has_correct_designer_4x_slot_order_and_preload_fsb_abi
     assert "filename && gm_valid(filename, 1)" in handler
     assert "set_eax(c, 1);" in handler
     assert "set_eax(c, 0);" not in handler
+
+
+
+def test_fmod_system_spatial_exports_have_exact_msvc_32bit_abi():
+    """Post-D3DX original game hit these three unknown-arity Ex member calls.
+
+    EventSystem virtual setters are separate; these are the nonvirtual System
+    exports from the DLL and include this in the guest's stack arguments.
+    """
+    code = (ROOT / "runtime" / "reflex_compat.cpp").read_text()
+    symbols = (
+        ('?setReverbAmbientProperties@System@FMOD@@QAG?AW4FMOD_RESULT@@PAUFMOD_REVERB_PROPERTIES@@@Z',
+         2, 'fmod_system_set_reverb_ambient_properties'),
+        ('?set3DNumListeners@System@FMOD@@QAG?AW4FMOD_RESULT@@H@Z',
+         2, 'fmod_system_set_3d_num_listeners'),
+        ('?set3DListenerAttributes@System@FMOD@@QAG?AW4FMOD_RESULT@@HPBUFMOD_VECTOR@@000@Z',
+         6, 'fmod_system_set_3d_listener_attributes'),
+    )
+    for symbol, argc, fn in symbols:
+        assert code.count('"' + symbol + '"') == 1
+        assert f'{argc}, {fn}' in code
+        assert f'void {fn}(X86 *c)' in code
+
+    listener = code.split('void fmod_system_set_3d_listener_attributes(X86 *c)', 1)[1]
+    listener = listener.split('void fmod_system_set_reverb_ambient_properties(X86 *c)', 1)[0]
+    for i in range(1, 6):
+        assert f'arg(c, {i})' in listener
+    assert 'gm_valid(ptr, 12u)' in listener
+    assert 'index >= g_fmod_listener_count' in listener
+    assert 'rd32(vectors[v] + lane * 4u)' in listener
+    assert 'set_eax(c, 0)' in listener
+
+    count = code.split('void fmod_system_set_3d_num_listeners(X86 *c)', 1)[1]
+    count = count.split('void fmod_system_set_3d_listener_attributes(X86 *c)', 1)[0]
+    assert 'count < 1u || count > 8u' in count
+    assert 'g_fmod_listener_count = count;' in count
+
+    reverb = code.split('void fmod_system_set_reverb_ambient_properties(X86 *c)', 1)[1]
+    reverb = reverb.split('void fmod_system_get_3d_settings(X86 *c)', 1)[0]
+    assert 'const uint32_t props = arg(c, 1);' in reverb
+    assert 'gm_valid(props, 4u)' in reverb
+    assert 'set_eax(c, 0)' in reverb
