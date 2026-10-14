@@ -11,6 +11,7 @@
 // coordinates are passed through; stage 0 is sampled by the pixel shader.
 #include <cstdint>
 #include <initializer_list>
+#include <cstddef>
 #include <vector>
 
 namespace reflex_ffp {
@@ -68,6 +69,28 @@ inline bool supported(uint32_t fvf, uint32_t texture0,
     return fvf == 0x00000104u && texture0 != 0 &&
            colorop == 4u && colorarg1 == 2u && colorarg2 == 1u &&
            alphaop == 2u && alphaarg1 == 2u && stage1_colorop == 1u;
+}
+
+// Accept only the *observed* original-game D3DVERTEXELEMENT9 declaration:
+//   stream 0, offset 0, FLOAT4, POSITIONT0
+//   stream 0, offset 16, FLOAT2, TEXCOORD0
+//   D3DDECL_END
+// This is the same layout as FVF XYZRHW|TEX1, with 24-byte stride.
+// A declaration ID alone is not a format; validate its complete contents,
+// source stream, and actual byte stride before enabling the shader bridge.
+inline bool supported_decl(const uint8_t *elements, size_t bytes,
+                           uint32_t stride) {
+    if (!elements || bytes != 24u || stride != 24u)
+        return false;
+    static constexpr uint8_t expected[24] = {
+        0x00, 0x00, 0x00, 0x00, 3, 0, 9, 0,
+        0x00, 0x00, 0x10, 0x00, 1, 0, 5, 0,
+        0xff, 0x00, 0x00, 0x00, 17, 0, 0, 0,
+    };
+    for (size_t i = 0; i < bytes; ++i)
+        if (elements[i] != expected[i])
+            return false;
+    return true;
 }
 
 inline bool clip_constants(float x, float y, float width, float height,
