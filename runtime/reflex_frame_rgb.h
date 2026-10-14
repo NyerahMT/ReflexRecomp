@@ -4,10 +4,11 @@
 #include <cstdint>
 #include <cstdio>
 namespace reflex_d3d9 {
-// Sample first frames and exponentially spaced later frames: 9 readbacks at
-// most, independent of FPS or a long-running render loop.
+// Sample first frames and bounded powers of two through 16,384 presents.
+// Late readbacks verify whether a shader fix visibly changes the loading
+// screen after the original game advances to its declaration-based draws.
 inline bool should_readback(uint64_t presented) noexcept {
-    return presented != 0u && presented <= 256u &&
+    return presented != 0u && presented <= 16384u &&
            (presented <= 2u || (presented & (presented - 1u)) == 0u);
 }
 struct FrameStats {
