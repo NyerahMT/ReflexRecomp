@@ -50,6 +50,18 @@ Static recompilation avoids having to interpret x86 instructions on the phone. I
 
 The goal is to leave the original gameplay code intact wherever possible, including Reflex's bike/rider handling and terrain systems.
 
+## Input target: physical controller
+
+The iOS version is being designed for a **connected game controller**, not an
+on-screen virtual gamepad. Xbox and PlayStation controllers are the initial
+targets through Apple's Game Controller support (or the SDL gamepad backend
+where appropriate). Reflex's separate bike steering and rider body control
+should remain independent on two analog sticks, with analog triggers retained.
+
+Controller handling is a **future gameplay milestone**, not an implemented
+feature yet. We do not plan virtual thumbsticks or touchscreen throttle and
+brake overlays; a supported connected controller will be required for play.
+
 ## Building / testing
 
 There's no end-user build process or release package yet. The CI workflows are primarily for translation, compilation, runtime tests, and startup diagnostics.
