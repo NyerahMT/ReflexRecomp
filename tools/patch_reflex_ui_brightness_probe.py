@@ -160,6 +160,55 @@ DRAW_NEW = r'''    d.label = pl.label;
              od, ok, sampled, rgb_gt15, rgb_peak, alpha_peak,
              a0, a1_15, a16_254, a255);
     }
+    // reflex-shader-output-alpha-trace-v1: decode the ORIGINAL bound pixel
+    // program, not a replacement. Report aggregate destination masks and
+    // opcode classes only (no proprietary instruction stream or textures).
+    // The Vulkan raster state already proves SRCALPHA/INVSRCALPHA; this
+    // identifies whether the shader writes oC0.a or leaves it at default 0.
+    if (checkpoint) {
+        uint32_t color0_writes = 0, color0_alpha_writes = 0;
+        uint32_t color0_rgb_writes = 0, color0_last_mask = 0;
+        uint32_t color0_last_op = 0, alpha_last_op = 0;
+        uint32_t alpha_last_mask = 0, tex_ops = 0, condition_ops = 0;
+        uint32_t saturated_color_writes = 0, temp_alpha_writes = 0;
+        for (const d9sh::Inst &in : ps.code) {
+            if (in.op == d9sh::OP_TEX || in.op == d9sh::OP_TEXLDL)
+                ++tex_ops;
+            if (in.op == d9sh::OP_IF || in.op == d9sh::OP_IFC ||
+                in.op == d9sh::OP_CMP)
+                ++condition_ops;
+            if (!in.has_dst)
+                continue;
+            if (in.dst.type == d9sh::R_TEMP && (in.dst.mask & 8u))
+                ++temp_alpha_writes;
+            if (in.dst.type != d9sh::R_COLOROUT || in.dst.index != 0u)
+                continue;
+            ++color0_writes;
+            color0_rgb_writes += (in.dst.mask & 7u) != 0u;
+            color0_last_mask = in.dst.mask;
+            color0_last_op = in.op;
+            saturated_color_writes += in.dst.saturate ? 1u : 0u;
+            if (in.dst.mask & 8u) {
+                ++color0_alpha_writes;
+                alpha_last_op = in.op;
+                alpha_last_mask = in.dst.mask;
+            }
+        }
+        LOGW("[reflex-shader-alpha] original od=%llu pskey=%016llx "
+             "ok=%u sm=%u.%u inst=%zu color0_writes=%u "
+             "color0_rgb_writes=%u color0_alpha_writes=%u "
+             "last_color_mask=%x last_color_op=%u "
+             "last_alpha_mask=%x last_alpha_op=%u "
+             "saturate_color=%u temp_alpha_writes=%u "
+             "texture_ops=%u conditions=%u",
+             od, static_cast<unsigned long long>(d.ps_key),
+             ps.ok ? 1u : 0u, ps.major, ps.minor, ps.code.size(),
+             color0_writes, color0_rgb_writes, color0_alpha_writes,
+             color0_last_mask, color0_last_op,
+             alpha_last_mask, alpha_last_op,
+             saturated_color_writes, temp_alpha_writes,
+             tex_ops, condition_ops);
+    }
     auto snap = [&](const char *phase) {
         if (!readable)
             return;
@@ -212,7 +261,9 @@ def patch_brightness_probe(kit: Path) -> None:
             text.count("[reflex-offscreen] pixels") != 1 or
             text.count("reflex-source-alpha-probe-v1") != 1 or
             text.count("[reflex-source-alpha] bound") != 1 or
-            text.count("[reflex-source-alpha] pixels") != 1):
+            text.count("[reflex-source-alpha] pixels") != 1 or
+            text.count("reflex-shader-output-alpha-trace-v1") != 1 or
+            text.count("[reflex-shader-alpha] original") != 1):
             raise RuntimeError("Partially installed brightness diagnostic patch")
         return
     modified = only(text, UPDATE_OLD, UPDATE_NEW, "UpdateTexture instrumentation")
