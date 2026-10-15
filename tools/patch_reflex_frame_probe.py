@@ -80,10 +80,11 @@ def patch_frame_probe(kit: Path, runtime: Path) -> None:
                 LOGW("[reflex-frame] rgb n=%llu size=%ux%u sampled=%u lit=%u hash=%016llx",
                      n, w, h, st.sampled, st.nonblack,
                      static_cast<unsigned long long>(st.hash));
-                // Save early and late real framebuffer states; at most six
-                // captures, to reveal shader fixes after loading begins.
+                // Save six actual framebuffers, including 8192: run #172's
+                // first measurably nonblack scene occurred at 8192 presents.
+                // Waiting until 16384 lost the only late visual evidence.
                 if (n == 1u || n == 8u || n == 64u || n == 256u ||
-                    n == 4096u || n == 16384u) {
+                    n == 4096u || n == 8192u) {
                     char filename[80];
                     std::snprintf(filename, sizeof filename,
                                   "build/logs/reflex-frame-%04llu.ppm", n);
