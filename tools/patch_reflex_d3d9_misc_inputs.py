@@ -41,12 +41,14 @@ SOURCE_NEW = r'''        case R_LOOP:
 '''
 MSL_OLD = r'''    s += ") {\n"
          "    float4 r[32] = {};\n"
+         "    float4 tc[8] = { vin.t0, vin.t1, vin.t2, vin.t3, vin.t4, vin.t5, vin.t6, vin.t7 };\n"
 '''
 MSL_NEW = r'''    // D3D9 vFace derives from the hardware front-facing primitive,
     // not a synthesized constant or a shader uniform.
     s += ",\n                         bool face [[front_facing]]";
     s += ") {\n"
          "    float4 r[32] = {};\n"
+         "    float4 tc[8] = { vin.t0, vin.t1, vin.t2, vin.t3, vin.t4, vin.t5, vin.t6, vin.t7 };\n"
 '''
 WGSL_OLD = r'''    s += "};\n"
          "@fragment fn ps_main(vin: V2F) -> FOut {\n"
