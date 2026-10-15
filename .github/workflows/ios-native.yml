@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: [".github/workflows/ios-native.yml", "tools/patch_reflex_d3d9_misc_inputs.py"]
+    paths: [".github/workflows/ios-native.yml", "tools/patch_reflex_d3d9_misc_inputs.py", "tools/patch_reflex_ui_brightness_probe.py"]
 
 permissions:
   contents: read
@@ -60,6 +60,7 @@ jobs:
           python3 tools/patch_reflex_vulkan_a8.py
           python3 tools/patch_reflex_vertex_samplers.py
           python3 tools/patch_reflex_d3d9_misc_inputs.py
+          python3 tools/patch_reflex_ui_brightness_probe.py
           python3 tools/patch_reflex_sse.py
           python3 tools/patch_reflex_interp.py
 
