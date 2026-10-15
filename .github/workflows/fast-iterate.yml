@@ -28,6 +28,7 @@ on:
       - "tools/patch_reflex_d3d9_update_texture.py"
       - "tools/patch_reflex_vulkan_a8.py"
       - "tools/patch_reflex_vertex_samplers.py"
+      - "tools/patch_reflex_d3d9_misc_inputs.py"
       - "tools/patch_reflex_frame_probe.py"
       - "tools/summarize_reflex_render.py"
       - "tools/patch_reflex_sse.py"
@@ -122,6 +123,7 @@ jobs:
           python3 tools/patch_reflex_d3d9_update_texture.py
           python3 tools/patch_reflex_vulkan_a8.py
           python3 tools/patch_reflex_vertex_samplers.py
+          python3 tools/patch_reflex_d3d9_misc_inputs.py
           python3 tools/patch_reflex_sse.py
           python3 tools/patch_reflex_interp.py
 
