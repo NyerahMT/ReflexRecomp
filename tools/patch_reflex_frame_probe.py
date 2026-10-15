@@ -77,9 +77,9 @@ def patch_frame_probe(kit: Path, runtime: Path) -> None:
             reflex_d3d9::FrameStats st;
             if (read && reflex_d3d9::frame_stats(
                     rgb.data(), rgb.size(), w, h, &st)) {
-                LOGW("[reflex-frame] rgb n=%llu size=%ux%u sampled=%u lit=%u hash=%016llx",
+                LOGW("[reflex-frame] rgb n=%llu size=%ux%u sampled=%u lit=%u hash=%016llx peak=%u",
                      n, w, h, st.sampled, st.nonblack,
-                     static_cast<unsigned long long>(st.hash));
+                     static_cast<unsigned long long>(st.hash), st.peak);
                 // Save six actual framebuffers, including 8192: run #172's
                 // first measurably nonblack scene occurred at 8192 presents.
                 // Waiting until 16384 lost the only late visual evidence.
