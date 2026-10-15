@@ -25,11 +25,11 @@ int main(int argc, char **argv) {
     std::vector<uint8_t> pixels(100 * 3);
     reflex_d3d9::FrameStats s;
     assert(reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, &s));
-    assert(s.sampled == 2 && s.nonblack == 0);
+    assert(s.sampled == 2 && s.nonblack == 0 && s.peak == 0);
     const auto old = s.hash;
     pixels[0] = 255;
     assert(reflex_d3d9::frame_stats(pixels.data(), pixels.size(), 10, 10, &s));
-    assert(s.nonblack == 1 && s.hash != old);
+    assert(s.nonblack == 1 && s.hash != old && s.peak == 255);
     const uint64_t sampled[] = {1, 2, 4, 8, 16, 32, 64, 128, 256,
                                 512, 1024, 2048, 4096, 8192, 16384};
     for (uint64_t n : sampled)
@@ -77,6 +77,7 @@ def test_pinned_probe_patch_idempotent_and_safe(tmp_path):
     assert current.count(patch.MARKER) == 1
     assert current.count("[reflex-frame] shaderless-skip") == 1
     assert current.count("[reflex-frame] present") == 1
+    assert "peak=%u" in current
     assert "n == 4096u || n == 8192u" in current
     assert "n == 4096u || n == 16384u" not in current
     patch.patch_frame_probe(kit, ROOT / "runtime")
