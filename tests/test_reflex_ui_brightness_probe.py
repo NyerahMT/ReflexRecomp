@@ -63,3 +63,26 @@ def test_probe_is_diagnostics_only(tmp_path):
     assert "LOGW(\"[reflex-brightness] draw" in result
     assert "host_d9_draw(&d);" in result
     assert "memcpy(b->blob.data(), a->blob.data(), a->blob.size());" in result
+
+
+def test_offscreen_readback_is_bounded_and_never_replaces_guest_output():
+    # The probe adds real, bounded GPU observations at selected original draws.
+    code = PROBE.DRAW_NEW
+    assert code.count("host_d9_draw(&d);") == 1
+    assert "reflex-offscreen-rgb-alpha-probe-v1" in code
+    assert "tracing ? com_get(pl.color_target[0]) : nullptr" in code
+    assert "off_flag[1] == '\\0'" in code
+    assert "off_rt->kind == K_D3D9SURFACE" in code
+    assert "owner->kind == K_D3D9TEXTURE" in code
+    assert "mirror_slot(off_rt, &slot)" in code
+    assert "surface_ref(off_rt)" in code
+    assert "od == 65536u" in code
+    assert "uint64_t(off_rt->width) * off_rt->height <= 2048u * 2048u" in code
+    assert 'snap("before");' in code
+    assert 'snap("after");' in code
+    assert code.index('snap("before");') < code.index("host_d9_draw(&d);")
+    assert code.index('snap("after");') > code.index("host_d9_draw(&d);")
+    assert "host_d9_texture_read(" in code
+    assert "host_d9_texture_upload(" not in code
+    assert "host_d9_clear(" not in code
+    assert "REFLEX_BRIGHTNESS_PROBE" in code
