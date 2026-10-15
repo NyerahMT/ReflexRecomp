@@ -109,6 +109,36 @@ def test_misc_patch_idempotence_and_fails_closed(tmp_path):
         PATCH.patch_misc_inputs(kit)
     assert target.read_text() == changed
 
+def test_vertex_sampler_and_misc_shader_patches_compose(tmp_path):
+    # The real build installs the vertex-sampler bridge before R_MISC.
+    # Test the exact ordered combination, not two isolated source copies.
+    import importlib.util
+    name = "reflex_vertex_samplers_for_misc_integration"
+    spec = importlib.util.spec_from_file_location(
+        name, ROOT / "tools" / "patch_reflex_vertex_samplers.py")
+    vertex = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vertex)
+    kit_root = ROOT / "kit"
+    files = (vertex.SHADERGEN, vertex.VULKAN, vertex.METAL)
+    if not all((kit_root / p).is_file() for p in files):
+        pytest.skip("Pinned kit only accessible in CI checkout")
+    kit = tmp_path / "kit"
+    for p in files:
+        dest = kit / p
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(kit_root / p, dest)
+    vertex.patch_vertex_samplers(kit)
+    PATCH.patch_misc_inputs(kit)
+    patched = (kit / PATCH.TARGET).read_text()
+    assert PATCH.MARKER in patched
+    assert "reflex-vertex-sampler-bridge-v1" in patched
+    assert patched.count(PATCH.MSL_NEW) == 1
+    assert patched.count(PATCH.SOURCE_NEW) == 1
+    vertex.patch_vertex_samplers(kit)
+    PATCH.patch_misc_inputs(kit)
+    assert (kit / PATCH.TARGET).read_text() == patched
+
+
 def test_native_sm3_pixel_misc_register_sources(tmp_path):
     kit = fixture(tmp_path)
     PATCH.patch_misc_inputs(kit)
