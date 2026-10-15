@@ -70,7 +70,73 @@ DRAW_NEW = r'''    d.label = pl.label;
                  double(pl.pconst[0][2]), double(pl.pconst[0][3]));
         }
     }
+    // reflex-offscreen-rgb-alpha-probe-v1: read-only GPU checkpoints around
+    // original offscreen draws; never replace shaders, states or pixels.
+    const char *off_flag = std::getenv("REFLEX_BRIGHTNESS_PROBE");
+    ComObj *off_rt = com_get(pl.color_target[0]);
+    const ComObj *bb = device_backbuffer(dev);
+    const bool offscreen = off_rt && off_rt->kind == K_D3D9SURFACE &&
+        (!bb || off_rt->id != bb->id);
+    static std::atomic<unsigned long long> offdraws{0};
+    const unsigned long long od = offscreen ? offdraws.fetch_add(1) + 1 : 0;
+    const bool checkpoint = off_flag && off_flag[0] == '1' &&
+        (od == 1u || od == 8u || od == 64u || od == 512u ||
+         od == 8192u || od == 65536u);
+    uint32_t slot = 0;
+    ComObj *owner = checkpoint ? com_get(mirror_slot(off_rt, &slot)) : nullptr;
+    const bool readable = owner && owner->kind == K_D3D9TEXTURE &&
+        (owner->rmask == 21u || owner->rmask == 22u ||
+         owner->rmask == 32u || owner->rmask == 33u) &&
+        off_rt->width && off_rt->height &&
+        uint64_t(off_rt->width) * off_rt->height <= 2048u * 2048u;
+    HostD9Surface surface{};
+    uint32_t pitch = 0;
+    std::vector<uint8_t> pixels;
+    if (checkpoint) {
+        LOGW("[reflex-offscreen] candidate od=%llu rt=%u owner=%u fmt=%u "
+             "size=%ux%u eligible=%u tex0=%u blend=%u src=%u dst=%u "
+             "colorwrite=%x vsbytes=%zu psbytes=%zu",
+             od, off_rt ? off_rt->id : 0u,
+             owner ? owner->id : 0u, owner ? owner->rmask : 0u,
+             off_rt ? off_rt->width : 0u, off_rt ? off_rt->height : 0u,
+             readable ? 1u : 0u, pl.sampler_tex[0], pl.rs[27],
+             pl.rs[19], pl.rs[20], pl.rs[168],
+             pl.vs.size(), pl.ps.size());
+        if (readable) {
+            surface = surface_ref(off_rt);
+            pitch = off_rt->width * 4u;
+            pixels.resize(size_t(pitch) * off_rt->height);
+        }
+    }
+    auto snap = [&](const char *phase) {
+        if (!readable)
+            return;
+        const int ok = host_d9_texture_read(
+            owner->id, surface.face, surface.level, pixels.data(), pitch);
+        uint32_t peak = 0, alpha = 0, above15 = 0, nonzero = 0, sampled = 0;
+        if (ok) {
+            const size_t total = size_t(off_rt->width) * off_rt->height;
+            const size_t stride = std::max<size_t>(1u, total / 4096u);
+            for (size_t i = 0; i < total; i += stride) {
+                const uint8_t *p = pixels.data() + i * 4u;
+                uint32_t rgb = std::max<uint32_t>(
+                    p[0], std::max<uint32_t>(p[1], p[2]));
+                peak = std::max(peak, rgb);
+                alpha = std::max<uint32_t>(alpha, p[3]);
+                above15 += rgb > 15u;
+                nonzero += rgb > 0u;
+                ++sampled;
+            }
+        }
+        LOGW("[reflex-offscreen] pixels od=%llu phase=%s read=%d "
+             "samples=%u nonzero=%u gt15=%u rgb_peak=%u alpha_peak=%u",
+             od, phase, ok, sampled, nonzero, above15, peak, alpha);
+    };
+    if (readable)
+        snap("before");
     host_d9_draw(&d);
+    if (readable)
+        snap("after");
 '''
 
 def only(src: str, old: str, new: str, name: str) -> str:
@@ -88,7 +154,10 @@ def patch_brightness_probe(kit: Path) -> None:
         if (text.count(MARKER) != 1 or
             text.count("[reflex-brightness] texture") != 1 or
             text.count("[reflex-brightness] draw") != 1 or
-            UPDATE_OLD in text or DRAW_OLD in text):
+            UPDATE_OLD in text or DRAW_OLD in text or
+            text.count("reflex-offscreen-rgb-alpha-probe-v1") != 1 or
+            text.count("[reflex-offscreen] candidate") != 1 or
+            text.count("[reflex-offscreen] pixels") != 1):
             raise RuntimeError("Partially installed brightness diagnostic patch")
         return
     modified = only(text, UPDATE_OLD, UPDATE_NEW, "UpdateTexture instrumentation")
