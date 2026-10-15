@@ -86,3 +86,29 @@ def test_offscreen_readback_is_bounded_and_never_replaces_guest_output():
     assert "host_d9_texture_upload(" not in code
     assert "host_d9_clear(" not in code
     assert "REFLEX_BRIGHTNESS_PROBE" in code
+
+
+def test_first_real_shader_sampler_alpha_is_read_only_and_format_checked():
+    # Draw #8 generates the first visible original UI fragments. To distinguish
+    # alpha in its sampled texture from alpha computed by the pixel shader,
+    # inspect the bound GPU texture without overriding either one.
+    code = PROBE.DRAW_NEW
+    assert code.count("host_d9_draw(&d);") == 1
+    assert code.count("reflex-source-alpha-probe-v1") == 1
+    assert code.count("[reflex-source-alpha] bound") == 1
+    assert code.count("[reflex-source-alpha] pixels") == 1
+    assert "sampler0 = checkpoint ? com_get(pl.sampler_tex[0]) : nullptr" in code
+    assert "sampler0->kind == K_D3D9TEXTURE" in code
+    assert "sampler0->rmask == 21u || sampler0->rmask == 22u" in code
+    assert "uint64_t(sampler0->width) * sampler0->height <= 2048u * 2048u" in code
+    assert "host_d9_texture_read(" in code
+    assert "sampler0->id, 0u, 0u, src_rgba.data(), src_pitch" in code
+    assert "rgb_peak" in code and "alpha_peak" in code
+    for bucket in ("a0", "a1_15", "a16_254", "a255"):
+        assert bucket in code
+    assert code.index("const bool checkpoint") < code.index("const bool sampleable")
+    assert code.index("const bool sampleable") < code.index("if (sampleable)")
+    assert code.index("if (sampleable)") < code.index("host_d9_draw(&d);")
+    assert "host_d9_texture_upload(" not in code
+    assert "host_d9_clear(" not in code
+    assert "pl.rs[27] =" not in code
