@@ -77,7 +77,8 @@ def test_pinned_probe_patch_idempotent_and_safe(tmp_path):
     assert current.count(patch.MARKER) == 1
     assert current.count("[reflex-frame] shaderless-skip") == 1
     assert current.count("[reflex-frame] present") == 1
-    assert "n == 4096u || n == 16384u" in current
+    assert "n == 4096u || n == 8192u" in current
+    assert "n == 4096u || n == 16384u" not in current
     patch.patch_frame_probe(kit, ROOT / "runtime")
     assert target.read_text() == current
     wrong = original.read_text().replace(
