@@ -109,6 +109,57 @@ DRAW_NEW = r'''    d.label = pl.label;
             pixels.resize(size_t(pitch) * off_rt->height);
         }
     }
+    // reflex-source-alpha-probe-v1: inspect the *bound* original texture on
+    // the same six draws. Decode raw 32-bit textures only; unsupported formats
+    // are reported, never interpreted as RGBA. No shader or blend overrides.
+    ComObj *sampler0 = checkpoint ? com_get(pl.sampler_tex[0]) : nullptr;
+    const bool sampleable = sampler0 && sampler0->kind == K_D3D9TEXTURE &&
+        (sampler0->rmask == 21u || sampler0->rmask == 22u ||
+         sampler0->rmask == 32u || sampler0->rmask == 33u) &&
+        sampler0->width && sampler0->height &&
+        uint64_t(sampler0->width) * sampler0->height <= 2048u * 2048u;
+    if (checkpoint) {
+        LOGW("[reflex-source-alpha] bound od=%llu tex=%u kind=%u fmt=%u "
+             "size=%ux%u eligible=%u psbytes=%zu c0=%g,%g,%g,%g",
+             od, sampler0 ? sampler0->id : 0u,
+             sampler0 ? unsigned(sampler0->kind) : 0u,
+             sampler0 ? sampler0->rmask : 0u,
+             sampler0 ? sampler0->width : 0u,
+             sampler0 ? sampler0->height : 0u,
+             sampleable ? 1u : 0u, pl.ps.size(),
+             double(pl.pconst[0][0]), double(pl.pconst[0][1]),
+             double(pl.pconst[0][2]), double(pl.pconst[0][3]));
+    }
+    if (sampleable) {
+        const uint32_t src_pitch = sampler0->width * 4u;
+        const size_t total = size_t(sampler0->width) * sampler0->height;
+        std::vector<uint8_t> src_rgba(size_t(src_pitch) * sampler0->height);
+        const int ok = host_d9_texture_read(
+            sampler0->id, 0u, 0u, src_rgba.data(), src_pitch);
+        uint32_t rgb_peak = 0, alpha_peak = 0, a0 = 0, a1_15 = 0;
+        uint32_t a16_254 = 0, a255 = 0, rgb_gt15 = 0, sampled = 0;
+        if (ok) {
+            const size_t stride = std::max<size_t>(1u, total / 4096u);
+            for (size_t i = 0; i < total; i += stride) {
+                const uint8_t *p = src_rgba.data() + i * 4u;
+                const uint32_t rgb = std::max<uint32_t>(
+                    p[0], std::max<uint32_t>(p[1], p[2]));
+                rgb_peak = std::max(rgb_peak, rgb);
+                alpha_peak = std::max<uint32_t>(alpha_peak, p[3]);
+                rgb_gt15 += rgb > 15u;
+                a0 += p[3] == 0u;
+                a1_15 += p[3] > 0u && p[3] <= 15u;
+                a16_254 += p[3] > 15u && p[3] < 255u;
+                a255 += p[3] == 255u;
+                ++sampled;
+            }
+        }
+        LOGW("[reflex-source-alpha] pixels od=%llu read=%d sampled=%u "
+             "rgb_gt15=%u rgb_peak=%u alpha_peak=%u "
+             "a0=%u a1_15=%u a16_254=%u a255=%u",
+             od, ok, sampled, rgb_gt15, rgb_peak, alpha_peak,
+             a0, a1_15, a16_254, a255);
+    }
     auto snap = [&](const char *phase) {
         if (!readable)
             return;
@@ -158,7 +209,10 @@ def patch_brightness_probe(kit: Path) -> None:
             UPDATE_OLD in text or DRAW_OLD in text or
             text.count("reflex-offscreen-rgb-alpha-probe-v1") != 1 or
             text.count("[reflex-offscreen] candidate") != 1 or
-            text.count("[reflex-offscreen] pixels") != 1):
+            text.count("[reflex-offscreen] pixels") != 1 or
+            text.count("reflex-source-alpha-probe-v1") != 1 or
+            text.count("[reflex-source-alpha] bound") != 1 or
+            text.count("[reflex-source-alpha] pixels") != 1):
             raise RuntimeError("Partially installed brightness diagnostic patch")
         return
     modified = only(text, UPDATE_OLD, UPDATE_NEW, "UpdateTexture instrumentation")
