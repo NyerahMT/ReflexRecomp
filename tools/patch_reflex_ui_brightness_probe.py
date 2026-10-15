@@ -73,8 +73,9 @@ DRAW_NEW = r'''    d.label = pl.label;
     // reflex-offscreen-rgb-alpha-probe-v1: read-only GPU checkpoints around
     // original offscreen draws; never replace shaders, states or pixels.
     const char *off_flag = std::getenv("REFLEX_BRIGHTNESS_PROBE");
-    ComObj *off_rt = com_get(pl.color_target[0]);
-    const ComObj *bb = device_backbuffer(dev);
+    const bool tracing = off_flag && off_flag[0] == '1' && off_flag[1] == '\0';
+    ComObj *off_rt = tracing ? com_get(pl.color_target[0]) : nullptr;
+    const ComObj *bb = tracing ? device_backbuffer(dev) : nullptr;
     const bool offscreen = off_rt && off_rt->kind == K_D3D9SURFACE &&
         (!bb || off_rt->id != bb->id);
     static std::atomic<unsigned long long> offdraws{0};
