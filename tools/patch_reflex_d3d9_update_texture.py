@@ -56,7 +56,7 @@ void Dev_UpdateTexture(X86 *c) {
         ComObj *a = from[i], *b = to[i];
         if (gpu_on())
             gpu_before_lock(a); // read back an updated 32-bit source if needed
-        std::memcpy(b->blob.data(), a->blob.data(), a->blob.size());
+        memcpy(b->blob.data(), a->blob.data(), a->blob.size());
         d9_raster_invalidate(b->id);
         gpu_after_unlock(b, 0u, static_cast<uint32_t>(b->blob.size()));
     }
