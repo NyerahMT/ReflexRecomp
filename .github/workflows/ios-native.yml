@@ -56,6 +56,7 @@ jobs:
           python3 tools/patch_reflex_d3d9_half.py
           python3 tools/patch_reflex_frame_probe.py
           python3 tools/patch_reflex_d3d9_ffp_quad.py
+          python3 tools/patch_reflex_d3d9_update_texture.py
           python3 tools/patch_reflex_sse.py
           python3 tools/patch_reflex_interp.py
 
