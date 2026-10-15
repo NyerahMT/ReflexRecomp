@@ -77,6 +77,9 @@ def test_pinned_probe_patch_idempotent_and_safe(tmp_path):
     assert current.count(patch.MARKER) == 1
     assert current.count("[reflex-frame] shaderless-skip") == 1
     assert current.count("[reflex-frame] present") == 1
+    assert current.count("[reflex-frame] clear n=") == 1
+    assert "reflex-frame-clear-probe-v1" in current
+    assert "flags & 1u" in current
     assert "peak=%u" in current
     assert "n == 4096u || n == 8192u" in current
     assert "n == 4096u || n == 16384u" not in current
