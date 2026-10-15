@@ -112,3 +112,23 @@ def test_first_real_shader_sampler_alpha_is_read_only_and_format_checked():
     assert "host_d9_texture_upload(" not in code
     assert "host_d9_clear(" not in code
     assert "pl.rs[27] =" not in code
+
+
+def test_original_pixel_shader_alpha_writes_traced_without_replacement():
+    code = PROBE.DRAW_NEW
+    assert code.count("reflex-shader-output-alpha-trace-v1") == 1
+    assert code.count("[reflex-shader-alpha] original") == 1
+    assert "if (checkpoint)" in code
+    assert "for (const d9sh::Inst &in : ps.code)" in code
+    assert "in.dst.type != d9sh::R_COLOROUT || in.dst.index != 0u" in code
+    assert "in.dst.mask & 8u" in code
+    assert "color0_alpha_writes" in code and "color0_rgb_writes" in code
+    assert "last_alpha_mask" in code and "last_alpha_op" in code
+    assert "d9sh::OP_TEXLDL" in code
+    assert "d9sh::OP_CMP" in code
+    assert "static_cast<unsigned long long>(d.ps_key)" in code
+    assert code.count("host_d9_draw(&d);") == 1
+    assert code.index("[reflex-shader-alpha] original") < code.index("host_d9_draw(&d);")
+    assert "pl.ps =" not in code
+    assert "pl.rs[27] =" not in code
+    assert "host_d9_clear(" not in code
