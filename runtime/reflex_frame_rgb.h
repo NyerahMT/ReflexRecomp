@@ -12,7 +12,7 @@ inline bool should_readback(uint64_t presented) noexcept {
            (presented <= 2u || (presented & (presented - 1u)) == 0u);
 }
 struct FrameStats {
-    uint32_t sampled = 0, nonblack = 0;
+    uint32_t sampled = 0, nonblack = 0, peak = 0;
     uint64_t hash = UINT64_C(1469598103934665603);
 };
 inline bool frame_stats(const uint8_t *rgb, size_t cap, uint32_t w, uint32_t h,
@@ -28,6 +28,7 @@ inline bool frame_stats(const uint8_t *rgb, size_t cap, uint32_t w, uint32_t h,
         if (uint32_t(p[0]) + p[1] + p[2] > 3u)
             ++out.nonblack;
         for (int k = 0; k < 3; ++k) {
+            if (p[k] > out.peak) out.peak = p[k];
             out.hash ^= p[k];
             out.hash *= UINT64_C(1099511628211);
         }
