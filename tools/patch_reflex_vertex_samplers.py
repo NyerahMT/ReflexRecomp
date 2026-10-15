@@ -101,7 +101,7 @@ def patch_vertex_samplers(kit: Path) -> None:
                 "VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT" not in vulkan or
                 "d9msl::pixel_sampler_mask(vp)" not in vulkan or
                 "[enc_ setVertexTexture:use atIndex:s]" not in metal or
-                MSL_OLD in shadergen or GLSL_OLD in shadergen):
+                MSL_NEW not in shadergen or GLSL_NEW not in shadergen):
             raise RuntimeError("Partial D3D9 vertex sampler bridge installation")
         return
     # Validate every pinned anchor before modifying any of three files.
