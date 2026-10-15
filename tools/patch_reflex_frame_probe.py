@@ -45,6 +45,30 @@ def patch_frame_probe(kit: Path, runtime: Path) -> None:
                  n, dev->d9_fvf_current, pl.declaration, pl.vs.size(),
                  pl.ps.size(), d.primitive, d.primitive_count);
         log_once("d3d9.gpu.ffp",''', "GPU shaderless draw")
+    # A D3D9 colour clear is what should separate legal, intro and menu
+    # images. Report actual guest clears (not inferred frame boundaries),
+    # without changing the device's clear semantics or guest state.
+    text = only(text,
+                '''void Dev_Clear(X86 *c) {
+    ComObj *dev = this_device9(c);
+    uint32_t count = arg(c, 1), rects = arg(c, 2), flags = arg(c, 3), color = arg(c, 4);
+''',
+                '''void Dev_Clear(X86 *c) {
+    ComObj *dev = this_device9(c);
+    uint32_t count = arg(c, 1), rects = arg(c, 2), flags = arg(c, 3), color = arg(c, 4);
+    // reflex-frame-clear-probe-v1: distinguish missing colour clears from
+    // blend/fade failures while original menu layers are advancing.
+    if (dev && (flags & 1u)) {
+        static std::atomic<unsigned long long> clears{0};
+        const unsigned long long n = clears.fetch_add(1) + 1;
+        if (n <= 8 || ((n & (n - 1)) == 0)) {
+            D9Pipeline &pl = d9_pipeline(dev->id);
+            LOGW("[reflex-frame] clear n=%llu flags=%x color=%08x target=%u "
+                 "rects=%u viewport=%ux%u", n, flags, color,
+                 pl.color_target[0], count, dev->width, dev->height);
+        }
+    }
+''', "original D3D9 Clear probe")
     text = only(text,
                 '''void Dev_Present(X86 *c) {
     ComObj *dev = this_device9(c);
