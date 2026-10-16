@@ -238,6 +238,129 @@ DRAW_NEW = r'''    d.label = pl.label;
     host_d9_draw(&d);
     if (readable)
         snap("after");
+    // reflex-gpu-ab-draw8-v1: ONE bounded, opt-in, GPU-side replay of the
+    // exact original draw into two PRIVATE scratch render targets. Never
+    // redirect the original draw, guest texture, or guest device states.
+    // Existing target #6 was blank before original offscreen draw #8.
+    // A: identical blend/write mask into transparent black.
+    // B: disable blending and enable all color channels to expose the actual
+    // fragment output RGBA. This tests shader versus blend in ONE run.
+    const char *ab_env = std::getenv("REFLEX_GPU_AB");
+    if (readable && od == 8u && ab_env &&
+        ab_env[0] == '1' && ab_env[1] == '\0' &&
+        off_rt->width <= 1280u && off_rt->height <= 720u &&
+        pl.rs[27] == 1u && pl.rs[19] == 5u &&
+        pl.rs[20] == 6u && pl.rs[168] == 7u &&
+        !com_get(0xfff80011u) && !com_get(0xfff80012u)) {
+        // Guard against feedback: a shader that samples its real destination
+        // cannot be faithfully replayed after the original draw completes.
+        bool feedback = false;
+        for (const uint32_t source : d.sampler_texture)
+            feedback |= source == owner->id;
+        if (feedback) {
+            LOGW("[reflex-gpu-ab] skipped od=%llu reason=feedback", od);
+        } else {
+            const size_t total = size_t(off_rt->width) * off_rt->height;
+            std::vector<uint8_t> replay_blend(total * 4u);
+            std::vector<uint8_t> replay_shader(total * 4u);
+            uint32_t rs_original[256];
+            uint32_t rs_shader[256];
+            memcpy(rs_original, pl.rs, sizeof rs_original);
+            memcpy(rs_shader, pl.rs, sizeof rs_shader);
+            rs_shader[27] = 0u;   // D3DRS_ALPHABLENDENABLE off, scratch only
+            rs_shader[168] = 15u; // capture alpha along with RGB in scratch
+            const uint32_t scratch_ids[2] = {0xfff80011u, 0xfff80012u};
+            int read_ok[2] = {};
+            for (unsigned side = 0; side < 2u; ++side) {
+                HostD9TextureDesc td{};
+                td.id = scratch_ids[side];
+                td.kind = HOST_D9_TEX_2D;
+                td.width = off_rt->width;
+                td.height = off_rt->height;
+                td.levels = 1u;
+                td.format = 21u; // BGRA8, actual offscreen format
+                td.usage = HOST_D9_USAGE_RENDERTARGET;
+                td.samples = 1u;
+                host_d9_texture_define(&td);
+                HostD9Draw dry = d;  // original shaders, vertices, textures
+                dry.target = HostD9Target{};
+                dry.target.color[0] = HostD9Surface{td.id, 0u, 0u};
+                dry.target.depth = HostD9Surface{}; // scratch has no guest depth
+                dry.render_state = side == 0u ? rs_original : rs_shader;
+                dry.state_version = 0u; // force a fresh snapshot of test state
+                host_d9_clear(&dry.target, dry.viewport, 0u, nullptr,
+                              1u, 0u, 1.0f, 0u);
+                host_d9_draw(&dry);
+                uint8_t *out = side == 0u
+                    ? replay_blend.data() : replay_shader.data();
+                read_ok[side] = host_d9_texture_read(
+                    td.id, 0u, 0u, out, td.width * 4u);
+                host_d9_texture_drop(td.id);
+            }
+            // Same pixel locations in all three images, unlike unrelated
+            // global brightness maxima from earlier diagnostics.
+            uint32_t direct_peak = 0, direct_alpha_peak = 0;
+            uint32_t blended_peak = 0, actual_peak = 0;
+            uint32_t shader_nonzero = 0, original_nonzero = 0;
+            uint32_t active_samples = 0, matches_within2 = 0;
+            uint32_t max_blend_error = 0, max_original_error = 0;
+            uint32_t shader_alpha_low = 0, shader_alpha_high = 0;
+            if (read_ok[0] && read_ok[1]) {
+                const size_t stride = std::max<size_t>(1u, total / 4096u);
+                for (size_t i = 0; i < total; i += stride) {
+                    const uint8_t *s = replay_shader.data() + i * 4u;
+                    const uint8_t *b = replay_blend.data() + i * 4u;
+                    const uint8_t *o = pixels.data() + i * 4u;
+                    uint32_t srgb = std::max<uint32_t>(
+                        s[0], std::max<uint32_t>(s[1], s[2]));
+                    uint32_t brgb = std::max<uint32_t>(
+                        b[0], std::max<uint32_t>(b[1], b[2]));
+                    uint32_t orgb = std::max<uint32_t>(
+                        o[0], std::max<uint32_t>(o[1], o[2]));
+                    direct_peak = std::max(direct_peak, srgb);
+                    direct_alpha_peak = std::max<uint32_t>(
+                        direct_alpha_peak, s[3]);
+                    blended_peak = std::max(blended_peak, brgb);
+                    actual_peak = std::max(actual_peak, orgb);
+                    shader_nonzero += srgb > 0u;
+                    original_nonzero += orgb > 0u;
+                    shader_alpha_low += s[3] > 0u && s[3] <= 15u;
+                    shader_alpha_high += s[3] >= 128u;
+                    if (srgb == 0u)
+                        continue;
+                    ++active_samples;
+                    uint32_t pixel_blend_error = 0u;
+                    uint32_t pixel_original_error = 0u;
+                    for (unsigned ch = 0u; ch < 3u; ++ch) {
+                        // SRCALPHA/INVSRCALPHA over a cleared black target.
+                        const int expected = int((unsigned(s[ch]) *
+                            unsigned(s[3]) + 127u) / 255u);
+                        pixel_blend_error = std::max<uint32_t>(
+                            pixel_blend_error,
+                            uint32_t(std::abs(int(b[ch]) - expected)));
+                        pixel_original_error = std::max<uint32_t>(
+                            pixel_original_error,
+                            uint32_t(std::abs(int(o[ch]) - int(b[ch]))));
+                    }
+                    max_blend_error = std::max(max_blend_error, pixel_blend_error);
+                    max_original_error = std::max(
+                        max_original_error, pixel_original_error);
+                    matches_within2 += pixel_blend_error <= 2u;
+                }
+            }
+            LOGW("[reflex-gpu-ab] od=%llu read_original=1 "
+                 "read_blend=%d read_direct=%d "
+                 "direct_rgb=%u direct_alpha=%u blend_rgb=%u original_rgb=%u "
+                 "direct_nonzero=%u original_nonzero=%u "
+                 "active=%u within2=%u max_blend_error=%u "
+                 "max_original_error=%u shader_alpha_low=%u shader_alpha_high=%u "
+                 "depth_detached=1",
+                 od, read_ok[0], read_ok[1], direct_peak, direct_alpha_peak,
+                 blended_peak, actual_peak, shader_nonzero, original_nonzero,
+                 active_samples, matches_within2, max_blend_error,
+                 max_original_error, shader_alpha_low, shader_alpha_high);
+        }
+    }
 '''
 
 def only(src: str, old: str, new: str, name: str) -> str:
@@ -263,7 +386,9 @@ def patch_brightness_probe(kit: Path) -> None:
             text.count("[reflex-source-alpha] bound") != 1 or
             text.count("[reflex-source-alpha] pixels") != 1 or
             text.count("reflex-shader-output-alpha-trace-v1") != 1 or
-            text.count("[reflex-shader-alpha] original") != 1):
+            text.count("[reflex-shader-alpha] original") != 1 or
+            text.count("reflex-gpu-ab-draw8-v1") != 1 or
+            text.count("[reflex-gpu-ab] od=") != 1):
             raise RuntimeError("Partially installed brightness diagnostic patch")
         return
     modified = only(text, UPDATE_OLD, UPDATE_NEW, "UpdateTexture instrumentation")
