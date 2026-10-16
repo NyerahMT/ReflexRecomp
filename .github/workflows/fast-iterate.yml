@@ -615,7 +615,7 @@ jobs:
       # [decoder-profile]; ordinary fast iterations retain the 15s probe.
       # Same executable/runtime environment, only the timeout differs.
       - name: Profile MXTables decoder for 60 seconds
-        if: steps.host.outcome == 'success' && github.event_name == 'push' && (contains(github.event.head_commit.message, '[decoder-profile]') || contains(github.event.head_commit.message, '[long-load]'))
+        if: steps.host.outcome == 'success' && github.event_name == 'push' && (contains(github.event.head_commit.message, '[decoder-profile]') || contains(github.event.head_commit.message, '[long-load]') || contains(github.event.head_commit.message, '[gpu-ab]'))
         continue-on-error: true
         run: |
           set -uo pipefail
@@ -628,6 +628,8 @@ jobs:
                 RECOMP_LOG=1 \
                 REFLEX_FRAME_PROBE=1 \
                 REFLEX_FFP_QUAD=1 \
+                REFLEX_BRIGHTNESS_PROBE=${{ contains(github.event.head_commit.message, '[gpu-ab]') && '1' || '0' }} \
+                REFLEX_GPU_AB=${{ contains(github.event.head_commit.message, '[gpu-ab]') && '1' || '0' }} \
                 RECOMP_WATCH_FRAME=1 \
                 SDL_AUDIODRIVER=dummy \
                 "$app" \
@@ -652,6 +654,16 @@ jobs:
             grep -E 'SEH: unhandled|call to unknown target|call to 00000000|unknown stdcall argument count' \
               build/logs/runtime-profile-60s.log | tail -n 25 || true
           fi
+
+      # [gpu-ab] skips the 840-second game-startup run: draw #8 happens early.
+      # Do not report a green diagnostic if the GPU replay never captured.
+      - name: Classify original shader-vs-blending GPU A/B
+        if: steps.host.outcome == 'success' && github.event_name == 'push' && contains(github.event.head_commit.message, '[gpu-ab]')
+        run: |
+          set -euo pipefail
+          python3 tools/analyze_reflex_gpu_ab.py \
+            build/logs/runtime-profile-60s.log \
+            --output build/logs/reflex-gpu-ab-classification.json
 
       # A/B Mesa software rasterizer contention without changing the game.
       # [decoder-profile] and [long-load] both trigger the 60-second control above.
