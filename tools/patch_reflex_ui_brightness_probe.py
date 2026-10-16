@@ -209,11 +209,14 @@ DRAW_NEW = r'''    d.label = pl.label;
              saturated_color_writes, temp_alpha_writes,
              tex_ops, condition_ops);
     }
+    int original_read_ok = 0;
     auto snap = [&](const char *phase) {
         if (!readable)
             return;
         const int ok = host_d9_texture_read(
             owner->id, surface.face, surface.level, pixels.data(), pitch);
+        if (phase[0] == 'a')
+            original_read_ok = ok;
         uint32_t peak = 0, alpha = 0, above15 = 0, nonzero = 0, sampled = 0;
         if (ok) {
             const size_t total = size_t(off_rt->width) * off_rt->height;
@@ -246,7 +249,7 @@ DRAW_NEW = r'''    d.label = pl.label;
     // B: disable blending and enable all color channels to expose the actual
     // fragment output RGBA. This tests shader versus blend in ONE run.
     const char *ab_env = std::getenv("REFLEX_GPU_AB");
-    if (readable && od == 8u && ab_env &&
+    if (readable && original_read_ok && od == 8u && ab_env &&
         ab_env[0] == '1' && ab_env[1] == '\0' &&
         off_rt->width <= 1280u && off_rt->height <= 720u &&
         pl.rs[27] == 1u && pl.rs[19] == 5u &&
@@ -348,14 +351,14 @@ DRAW_NEW = r'''    d.label = pl.label;
                     matches_within2 += pixel_blend_error <= 2u;
                 }
             }
-            LOGW("[reflex-gpu-ab] od=%llu read_original=1 "
+            LOGW("[reflex-gpu-ab] od=%llu read_original=%d "
                  "read_blend=%d read_direct=%d "
                  "direct_rgb=%u direct_alpha=%u blend_rgb=%u original_rgb=%u "
                  "direct_nonzero=%u original_nonzero=%u "
                  "active=%u within2=%u max_blend_error=%u "
                  "max_original_error=%u shader_alpha_low=%u shader_alpha_high=%u "
                  "depth_detached=1",
-                 od, read_ok[0], read_ok[1], direct_peak, direct_alpha_peak,
+                 od, original_read_ok, read_ok[0], read_ok[1], direct_peak, direct_alpha_peak,
                  blended_peak, actual_peak, shader_nonzero, original_nonzero,
                  active_samples, matches_within2, max_blend_error,
                  max_original_error, shader_alpha_low, shader_alpha_high);
