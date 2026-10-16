@@ -399,6 +399,7 @@ jobs:
       # Record *all* still-untranslated opcodes for preventative fixes.
       # This is diagnostic only; an unreachable trap is not a boot failure.
       - name: Inspect original type-1 loader guest instructions
+        if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[gpu-ab]') }}
         run: |
           python3 tools/inspect_reflex_loader_asm.py \
             --exe "$REFLEX_GAME_ROOT/MXReflex.exe" \
@@ -469,6 +470,7 @@ jobs:
             --output build/logs/post-atoi-seh-crash-asm-window.txt
 
       - name: Audit cached translation opcode coverage
+        if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[gpu-ab]') }}
         run: |
           python3 tools/audit_translation_traps.py \
             --generated build/recomp/gen \
@@ -477,6 +479,7 @@ jobs:
       # Inspect only the exact PCs that were not mapped in Ghidra's
       # static listing. Keep instruction bytes and the private PE out of logs.
       - name: Classify remaining unknown guest opcodes
+        if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[gpu-ab]') }}
         run: |
           python3 tools/identify_reflex_unknown_traps.py \
             --trap-report build/logs/translation-trap-audit.txt \
@@ -573,6 +576,7 @@ jobs:
       # The normal runtime gate above remains the baseline. The exact-key
       # comparison workaround only runs in this explicit probe environment.
       - name: Compare exact localized Intro lookup (diagnostic only)
+        if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[gpu-ab]') }}
         if: steps.host.outcome == 'success'
         continue-on-error: true
         run: |
@@ -611,6 +615,11 @@ jobs:
           grep "\[reflex-ui-result\]" build/logs/runtime-intro-probe.log | tail -n 15 || true
           exit 0
 
+      # Graphics-only A/B probes skip loader ASM enumeration, unknown opcode
+      # surveys, localized Intro lookups, and backlog inventory. Their results
+      # do not affect the patched guest binary or the GPU's actual draw states;
+      # keeping them for loader/long-load runs would only rerun unrelated work.
+      # The normal boot gate and the original-game GPU test still execute.
       # One-off controlled comparison. The merge commit title carries
       # [decoder-profile]; ordinary fast iterations retain the 15s probe.
       # Same executable/runtime environment, only the timeout differs.
@@ -843,7 +852,7 @@ jobs:
       # Count observed compatibility gaps even after an early native failure.
       # Avoid publishing the private game binary or full disassembly.
       - name: Inventory Reflex compatibility backlog
-        if: always()
+        if: ${{ always() && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[gpu-ab]')) }}
         run: |
           python3 tools/scan_reflex_backlog.py \
             --trap-report build/logs/translation-trap-audit.txt \
