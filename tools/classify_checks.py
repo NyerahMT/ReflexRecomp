@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decide whether a PR needs the expensive native and unsigned iOS scaffolds.
+"""Decide whether a change needs expensive native and unsigned iOS scaffolds.
 
 Only fast-path cached *generated guest* tracing and its focused tests are
 eligible for the quicker path. Source, headers, workflow changes outside
@@ -15,7 +15,8 @@ import sys
 
 
 def is_cached_diagnostic_only(path: str) -> bool:
-    if path == ".github/workflows/fast-iterate.yml":
+    if path in (".github/workflows/fast-iterate.yml",
+                "tests/test_fast_iteration_performance.py"):
         return True
     return (
         path.startswith("tools/patch_reflex_cached_") and path.endswith(".py")
@@ -41,17 +42,20 @@ def main() -> int:
     parser.add_argument("--base", default="origin/main")
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--main", action="store_true",
-                        help="Always compile on main")
+                        help="Classify the main commit against its first parent")
     args = parser.parse_args()
-    if args.main:
-        required, files = True, ["main-branch build"]
-    else:
-        try:
-            files = changed_files(args.base, args.head)
-            required = native_required(files)
-        except (OSError, subprocess.CalledProcessError) as exc:
-            print(f"WARNING: cannot classify changes ({exc}); building all", file=sys.stderr)
-            files, required = ["diff unavailable"], True
+    # GitHub's main workflow previously rebuilt two stub targets on EVERY
+    # push, even when a commit only changed fast-iterate diagnostics. A main
+    # commit has a first parent; compare against it, not origin/main (which
+    # resolves to the current commit after checkout). Unknown diffs always
+    # fall back to native validation instead of silently skipping builds.
+    base = "HEAD^" if args.main else args.base
+    try:
+        files = changed_files(base, args.head)
+        required = native_required(files)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        print(f"WARNING: cannot classify changes ({exc}); building all", file=sys.stderr)
+        files, required = ["diff unavailable"], True
     print(f"native_required={'true' if required else 'false'}")
     print(
         f"Change classification: {len(files)} file(s), "

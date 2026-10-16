@@ -49,6 +49,8 @@ jobs:
         with:
           python-version: "3.12"
 
+      # On main, classify HEAD against its first parent instead of assuming
+      # every diagnostics-only push needs two native stub compiles.
       - name: Classify native build requirement
         id: native
         run: |
@@ -65,7 +67,7 @@ jobs:
           ${{ matrix.python }} -m pip install -r kit/requirements-dev.txt
 
       - name: Install Linux build prerequisites
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.native.outputs.native_required == 'true'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq clang lld build-essential pkg-config libasound2-dev \
