@@ -141,7 +141,9 @@ def test_gpu_ab_probe_is_single_draw_and_isolated():
     assert code.count("reflex-gpu-ab-draw8-v1") == 1
     assert code.count("[reflex-gpu-ab] od=") == 1
     assert "const char *ab_env = std::getenv(\"REFLEX_GPU_AB\")" in code
-    assert "readable && od == 8u" in code
+    assert "readable && original_read_ok && od == 8u" in code
+    assert "original_read_ok = ok" in code
+    assert "read_original=%d" in code
     assert "ab_env[0] == '1' && ab_env[1] == '\\0'" in code
     assert "off_rt->width <= 1280u && off_rt->height <= 720u" in code
     assert "!com_get(0xfff80011u) && !com_get(0xfff80012u)" in code
