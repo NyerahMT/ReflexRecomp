@@ -15,7 +15,8 @@ import sys
 
 
 def is_cached_diagnostic_only(path: str) -> bool:
-    if path == ".github/workflows/fast-iterate.yml":
+    if path in (".github/workflows/fast-iterate.yml",
+                "tests/test_fast_iteration_performance.py"):
         return True
     return (
         path.startswith("tools/patch_reflex_cached_") and path.endswith(".py")
