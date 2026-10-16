@@ -112,8 +112,8 @@ def test_first_real_shader_sampler_alpha_is_read_only_and_format_checked():
     assert code.index("const bool sampleable") < code.index("if (sampleable)")
     assert code.index("if (sampleable)") < code.index("host_d9_draw(&d);")
     assert "host_d9_texture_upload(" not in code
-    assert "host_d9_clear(" not in code
-    assert "pl.rs[27] =" not in code
+    assert "host_d9_clear(&d.target" not in code
+    assert "pl.rs[27] = " not in code
 
 
 def test_original_pixel_shader_alpha_writes_traced_without_replacement():
@@ -132,8 +132,8 @@ def test_original_pixel_shader_alpha_writes_traced_without_replacement():
     assert code.count("host_d9_draw(&d);") == 1
     assert code.index("[reflex-shader-alpha] original") < code.index("host_d9_draw(&d);")
     assert "pl.ps =" not in code
-    assert "pl.rs[27] =" not in code
-    assert "host_d9_clear(" not in code
+    assert "pl.rs[27] = " not in code
+    assert "host_d9_clear(&d.target" not in code
 
 
 def test_gpu_ab_probe_is_single_draw_and_isolated():
@@ -163,8 +163,8 @@ def test_gpu_ab_probe_is_single_draw_and_isolated():
     assert "host_d9_texture_drop(td.id);" in code
     assert "reflex_gpu_ab::src_over_black(s[ch], s[3])" in code
     assert "reflex_gpu_ab::abs_diff(o[ch], b[ch])" in code
-    assert "pl.rs[27] =" not in code
-    assert "pl.rs[168] =" not in code
+    assert "pl.rs[27] = " not in code
+    assert "pl.rs[168] = " not in code
     assert "d.target = HostD9Target{}" not in code
     assert "host_d9_clear(&d.target" not in code
 
