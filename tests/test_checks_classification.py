@@ -2,6 +2,7 @@
 from pathlib import Path
 import importlib.util
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -54,3 +55,33 @@ def test_run_checks_workflow_has_single_pr_trigger_and_classification():
     assert "tools/classify_checks.py --base origin/main" in workflow
     assert "steps.native.outputs.native_required == 'true'" in workflow
     assert "cancel-in-progress: true" in workflow
+
+
+def test_main_commit_classifies_first_parent_instead_of_always_native(monkeypatch, capsys):
+    seen = []
+    def changed(base, head):
+        seen.append((base, head))
+        return [".github/workflows/fast-iterate.yml",
+                "tests/test_fast_iteration_performance.py"]
+    monkeypatch.setattr(classification, "changed_files", changed)
+    monkeypatch.setattr(sys, "argv", ["classify_checks.py", "--main"])
+    assert classification.main() == 0
+    assert seen == [("HEAD^", "HEAD")]
+    assert "native_required=false" in capsys.readouterr().out
+
+
+def test_main_diff_error_fails_closed(monkeypatch, capsys):
+    def failed_diff(base, head):
+        raise subprocess.CalledProcessError(1, "git diff")
+    monkeypatch.setattr(classification, "changed_files", failed_diff)
+    monkeypatch.setattr(sys, "argv", ["classify_checks.py", "--main"])
+    assert classification.main() == 0
+    assert "native_required=true" in capsys.readouterr().out
+
+
+def test_main_with_runtime_edit_requires_native(monkeypatch, capsys):
+    monkeypatch.setattr(classification, "changed_files",
+                        lambda base, head: ["runtime/reflex_compat.cpp"])
+    monkeypatch.setattr(sys, "argv", ["classify_checks.py", "--main"])
+    assert classification.main() == 0
+    assert "native_required=true" in capsys.readouterr().out
