@@ -333,14 +333,14 @@ DRAW_NEW = r'''    d.label = pl.label;
                     uint32_t pixel_original_error = 0u;
                     for (unsigned ch = 0u; ch < 3u; ++ch) {
                         // SRCALPHA/INVSRCALPHA over a cleared black target.
-                        const int expected = int((unsigned(s[ch]) *
-                            unsigned(s[3]) + 127u) / 255u);
+                        const uint8_t expected =
+                            reflex_gpu_ab::src_over_black(s[ch], s[3]);
                         pixel_blend_error = std::max<uint32_t>(
                             pixel_blend_error,
-                            uint32_t(std::abs(int(b[ch]) - expected)));
+                            reflex_gpu_ab::abs_diff(b[ch], expected));
                         pixel_original_error = std::max<uint32_t>(
                             pixel_original_error,
-                            uint32_t(std::abs(int(o[ch]) - int(b[ch]))));
+                            reflex_gpu_ab::abs_diff(o[ch], b[ch]));
                     }
                     max_blend_error = std::max(max_blend_error, pixel_blend_error);
                     max_original_error = std::max(
@@ -374,6 +374,9 @@ def patch_brightness_probe(kit: Path) -> None:
     if not path.is_file():
         raise RuntimeError("Missing pinned D3D9 source")
     text = path.read_text()
+    header = ROOT / "runtime" / "reflex_gpu_ab_math.h"
+    if not header.is_file():
+        raise RuntimeError("Missing independent GPU A/B reference header")
     if MARKER in text:
         if (text.count(MARKER) != 1 or
             text.count("[reflex-brightness] texture") != 1 or
@@ -388,11 +391,16 @@ def patch_brightness_probe(kit: Path) -> None:
             text.count("reflex-shader-output-alpha-trace-v1") != 1 or
             text.count("[reflex-shader-alpha] original") != 1 or
             text.count("reflex-gpu-ab-draw8-v1") != 1 or
-            text.count("[reflex-gpu-ab] od=") != 1):
+            text.count("[reflex-gpu-ab] od=") != 1 or
+            not (kit / "dx" / header.name).is_file()):
             raise RuntimeError("Partially installed brightness diagnostic patch")
         return
-    modified = only(text, UPDATE_OLD, UPDATE_NEW, "UpdateTexture instrumentation")
+    modified = only(text, '#include "com.h"\n',
+                    '#include "com.h"\n#include "reflex_gpu_ab_math.h"\n',
+                    "standalone GPU A/B blend reference include")
+    modified = only(modified, UPDATE_OLD, UPDATE_NEW, "UpdateTexture instrumentation")
     modified = only(modified, DRAW_OLD, DRAW_NEW, "GPU draw instrumentation")
+    (kit / "dx" / header.name).write_bytes(header.read_bytes())
     path.write_text(modified)
 
 def main():
