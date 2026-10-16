@@ -576,8 +576,7 @@ jobs:
       # The normal runtime gate above remains the baseline. The exact-key
       # comparison workaround only runs in this explicit probe environment.
       - name: Compare exact localized Intro lookup (diagnostic only)
-        if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[gpu-ab]') }}
-        if: steps.host.outcome == 'success'
+        if: ${{ steps.host.outcome == 'success' && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[gpu-ab]')) }}
         continue-on-error: true
         run: |
           set -uo pipefail
